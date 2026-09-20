@@ -26,19 +26,20 @@ body {
 
 .login-hero {
   position: relative;
-  max-width: 560px;
-  padding: 24px 26px;
+  max-width: 520px;
+  padding: 18px 22px;
   border: 1px solid rgba(213, 226, 244, 0.72);
   border-radius: 8px;
   background: rgba(255, 255, 255, 0.62);
   box-shadow: 0 20px 54px rgba(65, 94, 134, 0.08);
   backdrop-filter: blur(12px);
+  transform: translateY(-72px);
 }
 
 .login-kicker {
   display: inline-flex;
-  margin-bottom: 18px;
-  padding: 6px 12px;
+  margin-bottom: 12px;
+  padding: 5px 11px;
   border: 1px solid #d7e2f2;
   border-radius: 999px;
   background: rgba(255, 255, 255, 0.68);
@@ -48,15 +49,15 @@ body {
 }
 
 .login-hero h1.ant-typography {
-  margin-bottom: 14px;
-  font-size: 42px;
-  line-height: 1.15;
+  margin-bottom: 10px;
+  font-size: 36px;
+  line-height: 1.12;
   color: #15243a;
 }
 
 .login-hero .ant-typography {
-  font-size: 16px;
-  line-height: 1.72;
+  font-size: 15px;
+  line-height: 1.58;
   color: #53627a;
 }
 
@@ -202,9 +203,42 @@ body {
   backdrop-filter: blur(14px);
 }
 
+.login-card .ant-card-body {
+  padding: 30px 36px;
+}
+
+.login-card .ant-tabs-nav {
+  margin-bottom: 12px;
+}
+
+.login-card .ant-tabs-tab {
+  padding: 8px 0 12px;
+}
+
+.login-card h4.ant-typography {
+  margin: 12px 0 8px;
+}
+
+.login-card .ant-typography {
+  margin-bottom: 14px;
+}
+
+.login-card .ant-form {
+  max-width: 760px;
+}
+
+.login-card .ant-form-item {
+  margin-bottom: 14px;
+}
+
+.login-card .ant-input-affix-wrapper,
+.login-card .ant-select-selector {
+  min-height: 44px;
+}
+
 .login-demo-list {
   width: 100%;
-  margin-bottom: 18px;
+  margin-bottom: 14px;
 }
 
 .login-demo-button {
@@ -1125,6 +1159,10 @@ body {
   .login-page {
     grid-template-columns: 1fr;
     padding: 28px;
+  }
+
+  .login-hero {
+    transform: none;
   }
 
   .login-hero h1.ant-typography {
