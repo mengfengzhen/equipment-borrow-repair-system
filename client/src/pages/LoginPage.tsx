@@ -1,14 +1,7 @@
 import {
-  AuditOutlined,
-  CameraOutlined,
   CheckCircleOutlined,
-  DesktopOutlined,
   LockOutlined,
-  MobileOutlined,
-  SafetyCertificateOutlined,
-  ToolOutlined,
   UserOutlined,
-  VideoCameraOutlined,
 } from '@ant-design/icons';
 import { Button, Card, Form, Input, Select, Space, Tabs, Typography, message } from 'antd';
 import { useEffect, useState } from 'react';
@@ -103,38 +96,6 @@ export function LoginPage() {
         <Typography.Paragraph>
           面向企业资产管理场景，串起设备台账、借用审批、领取归还、异常维修和操作追踪，适合现场演示完整业务闭环。
         </Typography.Paragraph>
-        <div className="login-device-visual" aria-hidden="true">
-          <div className="device-visual-card visual-laptop"><DesktopOutlined /></div>
-          <div className="device-visual-card visual-camera"><CameraOutlined /></div>
-          <div className="device-visual-card visual-projector"><VideoCameraOutlined /></div>
-          <div className="device-visual-card visual-phone"><MobileOutlined /></div>
-        </div>
-        <div className="login-feature-grid">
-          <div>
-            <SafetyCertificateOutlined />
-            <span>角色权限</span>
-            <em>管理员、负责人、员工、维修人员分工清晰</em>
-          </div>
-          <div>
-            <AuditOutlined />
-            <span>审批流转</span>
-            <em>申请、审批、交付、归还状态可追踪</em>
-          </div>
-          <div>
-            <ToolOutlined />
-            <span>维修闭环</span>
-            <em>异常归还和手动报修都能沉淀记录</em>
-          </div>
-        </div>
-        <div className="login-flow">
-          <span>提交申请</span>
-          <i />
-          <span>部门审批</span>
-          <i />
-          <span>领取归还</span>
-          <i />
-          <span>维修复盘</span>
-        </div>
       </div>
       <Card className="login-card">
         <Tabs
