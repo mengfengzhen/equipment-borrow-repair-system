@@ -1,0 +1,50 @@
+export const Roles = {
+  ADMIN: 'ADMIN',
+  MANAGER: 'MANAGER',
+  USER: 'USER',
+  REPAIRER: 'REPAIRER',
+} as const;
+
+export const DeviceStatus = {
+  AVAILABLE: 'AVAILABLE',
+  BORROW_PENDING: 'BORROW_PENDING',
+  RESERVED: 'RESERVED',
+  BORROWED: 'BORROWED',
+  REPAIRING: 'REPAIRING',
+  SCRAPPED: 'SCRAPPED',
+  DISABLED: 'DISABLED',
+} as const;
+
+export const BorrowStatus = {
+  PENDING_APPROVAL: 'PENDING_APPROVAL',
+  NEED_MORE_INFO: 'NEED_MORE_INFO',
+  APPROVED: 'APPROVED',
+  REJECTED: 'REJECTED',
+  PICKED_UP: 'PICKED_UP',
+  RETURNED: 'RETURNED',
+  CANCELLED: 'CANCELLED',
+  OVERDUE: 'OVERDUE',
+} as const;
+
+export const ReturnCondition = {
+  NORMAL: 'NORMAL',
+  DAMAGED: 'DAMAGED',
+  MISSING_PARTS: 'MISSING_PARTS',
+  ABNORMAL: 'ABNORMAL',
+} as const;
+
+export const RepairStatus = {
+  WAITING_ACCEPT: 'WAITING_ACCEPT',
+  REPAIRING: 'REPAIRING',
+  WAITING_PARTS: 'WAITING_PARTS',
+  FIXED: 'FIXED',
+  UNREPAIRABLE: 'UNREPAIRABLE',
+} as const;
+
+export const activeBorrowStatuses = [
+  BorrowStatus.PENDING_APPROVAL,
+  BorrowStatus.NEED_MORE_INFO,
+  BorrowStatus.APPROVED,
+  BorrowStatus.PICKED_UP,
+  BorrowStatus.OVERDUE,
+];

@@ -1,0 +1,304 @@
+import { Injectable } from '@nestjs/common';
+import { BorrowStatus, DeviceStatus, RepairStatus } from '../common/constants';
+import { RequestUser } from '../common/current-user.decorator';
+import { PrismaService } from '../prisma/prisma.service';
+
+@Injectable()
+export class StatisticsService {
+  constructor(private readonly prisma: PrismaService) {}
+
+  async dashboard(user: RequestUser) {
+    const now = new Date();
+    const userDepartmentWhere = user.departmentId ? { departmentId: user.departmentId } : { id: '__NO_DEPARTMENT__' };
+    const [
+      totalDevices,
+      availableDevices,
+      borrowedDevices,
+      repairingDevices,
+      pendingApprovals,
+      waitingPickup,
+      activeRepairs,
+      overdueBorrows,
+      userPendingBorrows,
+      userNeedMoreInfo,
+      userApprovedBorrows,
+      userActiveBorrows,
+      userOverdueBorrows,
+      managerPendingApprovals,
+      managerNeedMoreInfo,
+      managerApprovedBorrows,
+      managerOverdueBorrows,
+      repairWaitingAccept,
+      repairMyRepairing,
+      repairMyWaitingParts,
+      repairMyFinished,
+      recentLogs,
+      deviceStatusGroups,
+    ] = await Promise.all([
+      this.prisma.device.count({ where: { deletedAt: null } }),
+      this.prisma.device.count({ where: { deletedAt: null, status: DeviceStatus.AVAILABLE } }),
+      this.prisma.device.count({ where: { deletedAt: null, status: DeviceStatus.BORROWED } }),
+      this.prisma.device.count({ where: { deletedAt: null, status: DeviceStatus.REPAIRING } }),
+      this.prisma.borrowRequest.count({ where: { status: BorrowStatus.PENDING_APPROVAL } }),
+      this.prisma.borrowRequest.count({ where: { status: BorrowStatus.APPROVED } }),
+      this.prisma.repairRecord.count({
+        where: {
+          status: { in: [RepairStatus.WAITING_ACCEPT, RepairStatus.REPAIRING, RepairStatus.WAITING_PARTS] },
+        },
+      }),
+      this.prisma.borrowRequest.count({
+        where: {
+          status: { in: [BorrowStatus.APPROVED, BorrowStatus.PICKED_UP, BorrowStatus.OVERDUE] },
+          borrowEndAt: { lt: now },
+        },
+      }),
+      this.prisma.borrowRequest.count({ where: { applicantId: user.id, status: BorrowStatus.PENDING_APPROVAL } }),
+      this.prisma.borrowRequest.count({ where: { applicantId: user.id, status: BorrowStatus.NEED_MORE_INFO } }),
+      this.prisma.borrowRequest.count({ where: { applicantId: user.id, status: BorrowStatus.APPROVED } }),
+      this.prisma.borrowRequest.count({
+        where: { applicantId: user.id, status: { in: [BorrowStatus.PICKED_UP, BorrowStatus.OVERDUE] } },
+      }),
+      this.prisma.borrowRequest.count({
+        where: { applicantId: user.id, status: { in: [BorrowStatus.PICKED_UP, BorrowStatus.OVERDUE] }, borrowEndAt: { lt: now } },
+      }),
+      this.prisma.borrowRequest.count({ where: { ...userDepartmentWhere, status: BorrowStatus.PENDING_APPROVAL } }),
+      this.prisma.borrowRequest.count({ where: { ...userDepartmentWhere, status: BorrowStatus.NEED_MORE_INFO } }),
+      this.prisma.borrowRequest.count({ where: { ...userDepartmentWhere, status: BorrowStatus.APPROVED } }),
+      this.prisma.borrowRequest.count({
+        where: { ...userDepartmentWhere, status: { in: [BorrowStatus.PICKED_UP, BorrowStatus.OVERDUE] }, borrowEndAt: { lt: now } },
+      }),
+      this.prisma.repairRecord.count({ where: { status: RepairStatus.WAITING_ACCEPT, repairerId: null } }),
+      this.prisma.repairRecord.count({ where: { repairerId: user.id, status: RepairStatus.REPAIRING } }),
+      this.prisma.repairRecord.count({ where: { repairerId: user.id, status: RepairStatus.WAITING_PARTS } }),
+      this.prisma.repairRecord.count({
+        where: { repairerId: user.id, status: { in: [RepairStatus.FIXED, RepairStatus.UNREPAIRABLE] } },
+      }),
+      this.prisma.auditLog.findMany({
+        orderBy: { createdAt: 'desc' },
+        take: 30,
+        include: { actor: { select: { name: true, role: true } } },
+      }),
+      this.prisma.device.groupBy({ by: ['status'], where: { deletedAt: null }, _count: true }),
+    ]);
+
+    return {
+      totalDevices,
+      availableDevices,
+      borrowedDevices,
+      repairingDevices,
+      pendingApprovals,
+      waitingPickup,
+      activeRepairs,
+      overdueBorrows,
+      userPendingBorrows,
+      userNeedMoreInfo,
+      userApprovedBorrows,
+      userActiveBorrows,
+      userOverdueBorrows,
+      managerPendingApprovals,
+      managerNeedMoreInfo,
+      managerApprovedBorrows,
+      managerOverdueBorrows,
+      repairWaitingAccept,
+      repairMyRepairing,
+      repairMyWaitingParts,
+      repairMyFinished,
+      recentLogs,
+      deviceStatusCounts: deviceStatusGroups.map((item) => ({ status: item.status, count: item._count })),
+    };
+  }
+
+  async deviceStatus() {
+    const groups = await this.prisma.device.groupBy({ by: ['status'], where: { deletedAt: null }, _count: true });
+    return groups.map((item) => ({ status: item.status, count: item._count }));
+  }
+
+  async reports(query: { startAt?: string; endAt?: string; departmentId?: string; type?: string } = {}) {
+    const now = new Date();
+    const timeWhere = {
+      ...(query.startAt || query.endAt
+        ? {
+            createdAt: {
+              ...(query.startAt ? { gte: new Date(query.startAt) } : {}),
+              ...(query.endAt ? { lte: new Date(query.endAt) } : {}),
+            },
+          }
+        : {}),
+    };
+    const deviceTypeWhere = query.type ? { type: query.type } : {};
+    const borrowWhere = {
+      ...timeWhere,
+      ...(query.departmentId ? { departmentId: query.departmentId } : {}),
+      ...(query.type ? { device: { type: query.type } } : {}),
+    };
+    const repairWhere = {
+      ...timeWhere,
+      ...(query.departmentId ? { borrowRequest: { departmentId: query.departmentId } } : {}),
+      ...(query.type ? { device: { type: query.type } } : {}),
+    };
+    const overdueWhere = {
+      status: { in: [BorrowStatus.PICKED_UP, BorrowStatus.OVERDUE] },
+      borrowEndAt: { lt: now },
+      ...(query.departmentId ? { departmentId: query.departmentId } : {}),
+      ...(query.type ? { device: { type: query.type } } : {}),
+    };
+    const monthStarts = Array.from({ length: 6 }, (_, index) => {
+      const date = new Date(now.getFullYear(), now.getMonth() - (5 - index), 1);
+      return date;
+    });
+    const nextMonth = new Date(now.getFullYear(), now.getMonth() + 1, 1);
+
+    const [
+      statusGroups,
+      typeGroups,
+      departmentGroups,
+      borrowRows,
+      repairRows,
+      monthlyRows,
+      overdueRows,
+    ] = await Promise.all([
+      this.prisma.device.groupBy({ by: ['status'], where: { deletedAt: null, ...deviceTypeWhere }, _count: true }),
+      this.prisma.device.groupBy({ by: ['type'], where: { deletedAt: null, ...deviceTypeWhere }, _count: true }),
+      this.prisma.borrowRequest.groupBy({ by: ['departmentId'], where: borrowWhere, _count: true }),
+      this.prisma.borrowRequest.findMany({
+        where: borrowWhere,
+        include: { device: { select: { id: true, name: true, code: true, type: true, status: true } } },
+      }),
+      this.prisma.repairRecord.findMany({
+        where: repairWhere,
+        include: { device: { select: { id: true, name: true, code: true, type: true, status: true } } },
+      }),
+      this.prisma.borrowRequest.findMany({
+        where: {
+          ...borrowWhere,
+          createdAt: {
+            gte: query.startAt ? new Date(query.startAt) : monthStarts[0],
+            lt: query.endAt ? new Date(query.endAt) : nextMonth,
+          },
+        },
+        select: { createdAt: true },
+      }),
+      this.prisma.borrowRequest.findMany({
+        where: overdueWhere,
+        include: {
+          device: { select: { id: true, name: true, code: true, type: true } },
+          applicant: { select: { id: true, name: true, username: true } },
+          department: { select: { id: true, name: true } },
+        },
+        orderBy: { borrowEndAt: 'asc' },
+        take: 10,
+      }),
+    ]);
+
+    const departments = await this.prisma.department.findMany({ select: { id: true, name: true } });
+    const departmentNameMap = Object.fromEntries(departments.map((department) => [department.id, department.name]));
+
+    return {
+      byStatus: statusGroups.map((item) => ({ name: item.status, count: item._count })),
+      byType: typeGroups.map((item) => ({ name: item.type, count: item._count })),
+      byDepartment: departmentGroups.map((item) => ({
+        name: item.departmentId ? departmentNameMap[item.departmentId] || '未知部门' : '未分配部门',
+        count: item._count,
+      })),
+      topBorrowed: topByDevice(borrowRows, repairRows, 'borrow'),
+      topRepaired: topByDevice(borrowRows, repairRows, 'repair'),
+      overdueBorrows: overdueRows,
+      monthlyBorrows: monthStarts.map((monthStart) => {
+        const monthKey = `${monthStart.getFullYear()}-${String(monthStart.getMonth() + 1).padStart(2, '0')}`;
+        return {
+          month: monthKey,
+          count: monthlyRows.filter((row) => {
+            const rowKey = `${row.createdAt.getFullYear()}-${String(row.createdAt.getMonth() + 1).padStart(2, '0')}`;
+            return rowKey === monthKey;
+          }).length,
+        };
+      }),
+    };
+  }
+}
+
+type RankingDevice = {
+  id: string;
+  name: string;
+  code: string;
+  type: string;
+  status: string;
+};
+
+type BorrowRankingRow = {
+  borrowStartAt: Date;
+  borrowEndAt: Date;
+  returnedAt: Date | null;
+  device: RankingDevice;
+};
+
+type RepairRankingRow = {
+  cost: number | null;
+  device: RankingDevice;
+};
+
+function topByDevice(
+  borrowRows: BorrowRankingRow[],
+  repairRows: RepairRankingRow[],
+  mode: 'borrow' | 'repair',
+) {
+  const map = new Map<string, {
+    name: string;
+    code: string;
+    type: string;
+    status: string;
+    count: number;
+    borrowCount: number;
+    borrowDays: number;
+    repairCount: number;
+    repairCost: number;
+  }>();
+
+  const ensure = (device: RankingDevice) => {
+    const current = map.get(device.id) || {
+      name: device.name,
+      code: device.code,
+      type: device.type,
+      status: device.status,
+      count: 0,
+      borrowCount: 0,
+      borrowDays: 0,
+      repairCount: 0,
+      repairCost: 0,
+    };
+    map.set(device.id, current);
+    return current;
+  };
+
+  borrowRows.forEach((row) => {
+    const current = ensure(row.device);
+    const endAt = row.returnedAt || row.borrowEndAt;
+    const days = Math.max(
+      1,
+      Math.ceil((endAt.getTime() - row.borrowStartAt.getTime()) / (24 * 60 * 60 * 1000)),
+    );
+    current.borrowCount += 1;
+    current.borrowDays += days;
+  });
+
+  repairRows.forEach((row) => {
+    const current = ensure(row.device);
+    current.repairCount += 1;
+    current.repairCost += Number(row.cost || 0);
+  });
+
+  return Array.from(map.values())
+    .map((item) => ({
+      ...item,
+      count: mode === 'borrow' ? item.borrowCount : item.repairCount,
+    }))
+    .filter((item) => item.count > 0)
+    .sort((a, b) => {
+      const primary = mode === 'borrow'
+        ? b.borrowCount - a.borrowCount
+        : b.repairCount - a.repairCount;
+      if (primary) return primary;
+      return b.borrowDays - a.borrowDays;
+    })
+    .slice(0, 6);
+}

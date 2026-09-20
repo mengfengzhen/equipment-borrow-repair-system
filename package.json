@@ -1,0 +1,21 @@
+{
+  "name": "equipment-borrow-repair-system",
+  "private": true,
+  "version": "0.1.0",
+  "description": "设备借用与维修管理系统",
+  "workspaces": [
+    "client",
+    "server"
+  ],
+  "scripts": {
+    "install:all": "npm install",
+    "setup": "npm --workspace server run db:push && npm --workspace server run db:seed",
+    "dev": "concurrently \"npm --workspace server run dev\" \"npm --workspace client run dev\"",
+    "build": "npm --workspace server run build && npm --workspace client run build",
+    "railway:build": "npm run build",
+    "start": "npm --workspace server run start:railway"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.2"
+  }
+}

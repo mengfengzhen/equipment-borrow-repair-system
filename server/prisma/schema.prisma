@@ -1,0 +1,139 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model Department {
+  id        String   @id @default(cuid())
+  name      String   @unique
+  managerId String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  users          User[]
+  borrowRequests BorrowRequest[]
+}
+
+model User {
+  id           String   @id @default(cuid())
+  username     String   @unique
+  passwordHash String
+  name         String
+  role         String
+  departmentId String?
+  phone        String?
+  email        String?
+  active       Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  department        Department?     @relation(fields: [departmentId], references: [id])
+  ownedDevices      Device[]        @relation("DeviceOwner")
+  borrowRequests    BorrowRequest[] @relation("BorrowApplicant")
+  approvals         BorrowApproval[]
+  repairAssignments RepairRecord[]  @relation("Repairer")
+  auditLogs         AuditLog[]
+}
+
+model Device {
+  id                 String   @id @default(cuid())
+  name               String
+  code               String   @unique
+  type               String
+  brand              String?
+  model              String?
+  location           String
+  ownerId            String?
+  purchaseDate       DateTime?
+  warrantyExpireDate DateTime?
+  value              Float?
+  status             String   @default("AVAILABLE")
+  description        String?
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+  deletedAt          DateTime?
+
+  owner          User?           @relation("DeviceOwner", fields: [ownerId], references: [id])
+  borrowRequests BorrowRequest[]
+  repairRecords  RepairRecord[]
+}
+
+model SystemSetting {
+  key       String   @id
+  value     String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model BorrowRequest {
+  id               String   @id @default(cuid())
+  deviceId         String
+  applicantId      String
+  departmentId     String?
+  borrowStartAt    DateTime
+  borrowEndAt      DateTime
+  purpose          String
+  remark           String?
+  attachmentNames  String?
+  status           String   @default("PENDING_APPROVAL")
+  approvalRequired Boolean  @default(true)
+  pickedUpAt       DateTime?
+  returnedAt       DateTime?
+  returnCondition  String?
+  returnRemark     String?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  device      Device           @relation(fields: [deviceId], references: [id])
+  applicant   User             @relation("BorrowApplicant", fields: [applicantId], references: [id])
+  department  Department?      @relation(fields: [departmentId], references: [id])
+  approvals   BorrowApproval[]
+  repairs     RepairRecord[]
+}
+
+model BorrowApproval {
+  id              String   @id @default(cuid())
+  borrowRequestId String
+  approverId      String
+  result          String
+  comment         String
+  createdAt       DateTime @default(now())
+
+  borrowRequest BorrowRequest @relation(fields: [borrowRequestId], references: [id])
+  approver      User          @relation(fields: [approverId], references: [id])
+}
+
+model RepairRecord {
+  id               String   @id @default(cuid())
+  deviceId         String
+  borrowRequestId  String?
+  faultDescription String
+  repairerId       String?
+  repairStartAt    DateTime @default(now())
+  repairEndAt      DateTime?
+  cost             Float?
+  status           String   @default("WAITING_ACCEPT")
+  result           String?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  device        Device         @relation(fields: [deviceId], references: [id])
+  borrowRequest BorrowRequest? @relation(fields: [borrowRequestId], references: [id])
+  repairer      User?          @relation("Repairer", fields: [repairerId], references: [id])
+}
+
+model AuditLog {
+  id         String   @id @default(cuid())
+  actorId    String?
+  action     String
+  targetType String
+  targetId   String?
+  detail     String?
+  createdAt  DateTime @default(now())
+
+  actor User? @relation(fields: [actorId], references: [id])
+}
