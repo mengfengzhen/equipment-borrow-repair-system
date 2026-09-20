@@ -203,7 +203,7 @@ export function DashboardPage() {
           <Typography.Paragraph>{copy.subtitle}</Typography.Paragraph>
           <Space wrap className="hero-actions">
             {quickActions.map((item) => (
-              <Button key={item.path} type={item.type} size="large" onClick={() => navigate(item.path)}>
+              <Button key={item.path} type={item.type} onClick={() => navigate(item.path)}>
                 {item.label}
               </Button>
             ))}

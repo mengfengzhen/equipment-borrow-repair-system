@@ -381,7 +381,7 @@ body {
   justify-content: space-between;
   gap: 24px;
   margin-bottom: 18px;
-  padding: 26px 28px;
+  padding: 24px 28px;
   border: 1px solid #e2e8f0;
   border-radius: 8px;
   background:
@@ -400,7 +400,7 @@ body {
 }
 
 .dashboard-hero {
-  min-height: 172px;
+  min-height: 148px;
   align-items: stretch;
   border-color: #dfe8f5;
   background:
@@ -415,10 +415,10 @@ body {
 }
 
 .hero-kicker {
-  margin-bottom: 8px;
+  margin-bottom: 6px;
   color: #4f8df7;
   font-size: 13px;
-  font-weight: 600;
+  font-weight: 500;
 }
 
 .dashboard-hero h2.ant-typography,
@@ -429,14 +429,16 @@ body {
 .dashboard-hero .ant-typography {
   max-width: 660px;
   color: #667085;
+  font-size: 15px;
+  line-height: 1.55;
 }
 
 .hero-actions {
-  margin-top: 10px;
+  margin-top: 14px;
 }
 
 .hero-summary {
-  min-width: 280px;
+  min-width: 272px;
   display: grid;
   grid-template-columns: 1fr;
   gap: 10px;
@@ -448,7 +450,7 @@ body {
   justify-content: space-between;
   align-items: center;
   gap: 18px;
-  padding: 12px 16px;
+  padding: 10px 14px;
   border: 1px solid #d8e6fb;
   border-radius: 8px;
   background: rgba(248, 251, 255, 0.88);
@@ -456,16 +458,22 @@ body {
 
 .hero-summary span {
   color: #667085;
+  font-size: 14px;
 }
 
 .hero-summary strong {
   color: #172033;
-  font-size: 22px;
+  font-size: 20px;
+  font-weight: 650;
 }
 
 .hero-panel h2.ant-typography {
   margin: 0 0 8px;
   color: #172033;
+  font-size: 34px;
+  line-height: 1.2;
+  font-weight: 650;
+  letter-spacing: 0;
 }
 
 .hero-panel .ant-typography {
