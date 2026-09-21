@@ -1,13 +1,14 @@
 import { UploadOutlined } from '@ant-design/icons';
-import { Alert, Button, Card, Form, Input, Modal, Select, Space, Switch, Table, Typography, Upload, message } from 'antd';
+import { Alert, Button, Card, DatePicker, Form, Input, Modal, Select, Space, Switch, Table, Typography, Upload, message } from 'antd';
 import { ColumnsType } from 'antd/es/table';
 import type { UploadFile } from 'antd/es/upload/interface';
+import dayjs from 'dayjs';
 import { useEffect, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { http } from '../api/http';
 import { StatusTag } from '../components/StatusTag';
 import { borrowStatusNames } from '../types/enums';
-import { BorrowRequest, User } from '../types/models';
+import { BorrowRequest, Department, User } from '../types/models';
 import { formatDateTime } from '../utils/format';
 import { parseAttachments, serializeAttachments, uploadFiles } from '../utils/upload';
 
@@ -18,11 +19,17 @@ export function BorrowRequestsPage() {
   const [rows, setRows] = useState<BorrowRequest[]>([]);
   const [action, setAction] = useState<{ type: Action; row: BorrowRequest }>();
   const [settings, setSettings] = useState<{ approvalRequired: boolean }>();
+  const [users, setUsers] = useState<User[]>([]);
+  const [departments, setDepartments] = useState<Department[]>([]);
   const [form] = Form.useForm();
   const [filterForm] = Form.useForm();
   const [searchParams, setSearchParams] = useSearchParams();
   const user = JSON.parse(localStorage.getItem('user') || '{}') as User;
   const statusFilter = searchParams.get('status');
+  const applicantFilter = searchParams.get('applicantId') || undefined;
+  const departmentFilter = searchParams.get('departmentId') || undefined;
+  const startFilter = searchParams.get('borrowStartAt') || undefined;
+  const endFilter = searchParams.get('borrowEndAt') || undefined;
   const title = user.role === 'USER' ? '我的借用申请' : user.role === 'MANAGER' ? '部门审批' : '借用交付与归还';
   const subtitle = user.role === 'USER'
     ? '跟踪自己的申请、审批、领取和归还状态。'
@@ -31,25 +38,51 @@ export function BorrowRequestsPage() {
       : '处理已审批申请的设备交付、归还登记和异常维修入口。';
 
   const load = () => {
-    const query = statusFilter ? `?status=${encodeURIComponent(statusFilter)}` : '';
+    const params = new URLSearchParams();
+    if (statusFilter) params.set('status', statusFilter);
+    if (applicantFilter) params.set('applicantId', applicantFilter);
+    if (departmentFilter) params.set('departmentId', departmentFilter);
+    if (startFilter) params.set('borrowStartAt', startFilter);
+    if (endFilter) params.set('borrowEndAt', endFilter);
+    const query = params.toString() ? `?${params.toString()}` : '';
     Promise.all([
       http.get(`/borrow-requests${query}`),
       http.get('/settings'),
+      http.get('/departments'),
+      user.role === 'ADMIN' ? http.get('/users') : Promise.resolve([]),
     ])
-      .then(([borrowRes, settingRes]) => {
+      .then(([borrowRes, settingRes, departmentRes, userRes]) => {
         setRows(borrowRes as unknown as BorrowRequest[]);
         setSettings(settingRes as unknown as { approvalRequired: boolean });
+        setDepartments(departmentRes as unknown as Department[]);
+        setUsers(userRes as unknown as User[]);
       })
       .catch((error) => message.error((error as Error).message));
   };
 
   useEffect(() => {
-    filterForm.setFieldsValue({ status: statusFilter || undefined });
+    filterForm.setFieldsValue({
+      status: statusFilter || undefined,
+      applicantId: applicantFilter,
+      departmentId: departmentFilter,
+      borrowRange: startFilter && endFilter ? [dayjs(startFilter), dayjs(endFilter)] : undefined,
+    });
     load();
-  }, [statusFilter]);
+  }, [statusFilter, applicantFilter, departmentFilter, startFilter, endFilter]);
 
-  const applyFilters = (values: { status?: string }) => {
-    setSearchParams(values.status ? { status: values.status } : {});
+  const applyFilters = (values: {
+    status?: string;
+    applicantId?: string;
+    departmentId?: string;
+    borrowRange?: [dayjs.Dayjs, dayjs.Dayjs];
+  }) => {
+    const params: Record<string, string> = {};
+    if (values.status) params.status = values.status;
+    if (values.applicantId) params.applicantId = values.applicantId;
+    if (values.departmentId) params.departmentId = values.departmentId;
+    if (values.borrowRange?.[0]) params.borrowStartAt = values.borrowRange[0].startOf('day').toISOString();
+    if (values.borrowRange?.[1]) params.borrowEndAt = values.borrowRange[1].endOf('day').toISOString();
+    setSearchParams(params);
   };
 
   const resetFilters = () => {
@@ -73,6 +106,13 @@ export function BorrowRequestsPage() {
     form.resetFields();
     if (type === 'supplement') {
       form.setFieldsValue({ purpose: row.purpose, remark: row.remark });
+    }
+    if (type === 'return') {
+      form.setFieldsValue({
+        returnCondition: 'NORMAL',
+        returnLocation: row.device.location,
+        reportRepair: false,
+      });
     }
     setAction({ type, row });
   };
@@ -202,6 +242,34 @@ export function BorrowRequestsPage() {
           <Form.Item name="status" label="状态">
             <Select allowClear placeholder="全部状态" options={borrowStatusOptions} style={{ width: 150 }} />
           </Form.Item>
+          {user.role !== 'USER' && (
+            <Form.Item name="applicantId" label="申请人">
+              <Select
+                allowClear
+                showSearch
+                placeholder="全部申请人"
+                optionFilterProp="label"
+                options={(users.length ? users : uniqueApplicants(rows)).map((item) => ({
+                  label: `${item.name}${item.username ? ` / ${item.username}` : ''}`,
+                  value: item.id,
+                }))}
+                style={{ width: 160 }}
+              />
+            </Form.Item>
+          )}
+          {user.role === 'ADMIN' && (
+            <Form.Item name="departmentId" label="部门">
+              <Select
+                allowClear
+                placeholder="全部部门"
+                options={departments.map((department) => ({ label: department.name, value: department.id }))}
+                style={{ width: 160 }}
+              />
+            </Form.Item>
+          )}
+          <Form.Item name="borrowRange" label="借用时间">
+            <DatePicker.RangePicker style={{ width: 260 }} />
+          </Form.Item>
           <Form.Item>
             <Space>
               <Button type="primary" htmlType="submit">查询</Button>
@@ -224,6 +292,7 @@ export function BorrowRequestsPage() {
             <div>
               <p>备注：{row.remark || '-'}</p>
               <p>附件：{renderAttachments(row.attachmentNames)}</p>
+              <p>归还位置：{row.returnLocation || '-'}</p>
               <p>归还备注：{row.returnRemark || '-'}</p>
               <div>审批记录：{renderApprovals(row.approvals)}</div>
             </div>
@@ -264,6 +333,7 @@ export function BorrowRequestsPage() {
               <>
                 <Form.Item name="returnCondition" label="归还状态" rules={[{ required: true }]}>
                   <Select
+                    onChange={(value) => form.setFieldsValue({ reportRepair: value !== 'NORMAL' })}
                     options={[
                       { label: '正常', value: 'NORMAL' },
                       { label: '损坏', value: 'DAMAGED' },
@@ -272,8 +342,21 @@ export function BorrowRequestsPage() {
                     ]}
                   />
                 </Form.Item>
+                <Form.Item name="returnLocation" label="归还位置" rules={[{ required: true, message: '请填写归还位置' }]}>
+                  <Input placeholder="默认使用设备当前存放地点，可手动修改" />
+                </Form.Item>
                 <Form.Item name="returnRemark" label="归还备注" rules={[{ required: true }]}>
                   <Input.TextArea rows={3} />
+                </Form.Item>
+                <Form.Item name="reportRepair" label="是否报修" valuePropName="checked">
+                  <Switch />
+                </Form.Item>
+                <Form.Item shouldUpdate={(prev, current) => prev.reportRepair !== current.reportRepair} noStyle>
+                  {({ getFieldValue }) => getFieldValue('reportRepair') ? (
+                    <Form.Item name="repairDescription" label="故障描述">
+                      <Input.TextArea rows={3} placeholder="不填写时默认使用归还备注生成维修单" />
+                    </Form.Item>
+                  ) : null}
                 </Form.Item>
               </>
             ) : (
@@ -286,6 +369,12 @@ export function BorrowRequestsPage() {
       </Modal>
     </div>
   );
+}
+
+function uniqueApplicants(rows: BorrowRequest[]) {
+  const map = new Map<string, BorrowRequest['applicant']>();
+  rows.forEach((row) => map.set(row.applicant.id, row.applicant));
+  return Array.from(map.values());
 }
 
 function actionTitle(type?: Action) {

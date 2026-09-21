@@ -1,4 +1,4 @@
-import { IsDateString, IsIn, IsOptional, IsString, MinLength } from 'class-validator';
+import { IsBoolean, IsDateString, IsIn, IsOptional, IsString, MinLength } from 'class-validator';
 import { ReturnCondition } from '../common/constants';
 
 export class BorrowQueryDto {
@@ -9,6 +9,22 @@ export class BorrowQueryDto {
   @IsOptional()
   @IsString()
   deviceId?: string;
+
+  @IsOptional()
+  @IsString()
+  applicantId?: string;
+
+  @IsOptional()
+  @IsString()
+  departmentId?: string;
+
+  @IsOptional()
+  @IsDateString()
+  borrowStartAt?: string;
+
+  @IsOptional()
+  @IsDateString()
+  borrowEndAt?: string;
 }
 
 export class CreateBorrowRequestDto {
@@ -66,4 +82,16 @@ export class ReturnBorrowDto {
   @IsString()
   @MinLength(2)
   returnRemark!: string;
+
+  @IsOptional()
+  @IsString()
+  returnLocation?: string;
+
+  @IsOptional()
+  @IsBoolean()
+  reportRepair?: boolean;
+
+  @IsOptional()
+  @IsString()
+  repairDescription?: string;
 }

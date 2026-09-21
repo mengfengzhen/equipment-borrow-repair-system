@@ -10,6 +10,10 @@ export class RepairQueryDto {
   @IsOptional()
   @IsString()
   deviceType?: string;
+
+  @IsOptional()
+  @IsString()
+  repairerId?: string;
 }
 
 export class CreateRepairDto {

@@ -16,6 +16,7 @@ export class RepairsService {
     return this.prisma.repairRecord.findMany({
       where: {
         status: query.status,
+        repairerId: user.role === Roles.ADMIN ? query.repairerId : undefined,
         device: query.deviceType ? { type: query.deviceType } : undefined,
         OR: user.role === Roles.REPAIRER ? [{ repairerId: user.id }, { repairerId: null }] : undefined,
       },

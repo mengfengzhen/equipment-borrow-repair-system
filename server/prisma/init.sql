@@ -77,6 +77,7 @@ CREATE TABLE "BorrowRequest" (
   "returnedAt" DATETIME,
   "returnCondition" TEXT,
   "returnRemark" TEXT,
+  "returnLocation" TEXT,
   "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   "updatedAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   CONSTRAINT "BorrowRequest_deviceId_fkey" FOREIGN KEY ("deviceId") REFERENCES "Device" ("id") ON DELETE RESTRICT ON UPDATE CASCADE,

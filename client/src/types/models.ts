@@ -44,6 +44,7 @@ export type BorrowRequest = {
   returnedAt?: string;
   returnCondition?: string;
   returnRemark?: string;
+  returnLocation?: string;
   device: Device;
   applicant: { id: string; name: string; username?: string };
   department?: { id: string; name: string };

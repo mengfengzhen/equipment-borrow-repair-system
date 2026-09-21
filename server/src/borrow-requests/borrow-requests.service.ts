@@ -33,7 +33,16 @@ export class BorrowRequestsService {
     const where: Prisma.BorrowRequestWhereInput = {
       status: query.status,
       deviceId: query.deviceId,
+      applicantId: query.applicantId,
+      departmentId: query.departmentId,
     };
+
+    if (query.borrowStartAt || query.borrowEndAt) {
+      where.AND = [
+        query.borrowEndAt ? { borrowStartAt: { lte: new Date(query.borrowEndAt) } } : {},
+        query.borrowStartAt ? { borrowEndAt: { gte: new Date(query.borrowStartAt) } } : {},
+      ];
+    }
 
     if (user.role === Roles.USER) {
       where.applicantId = user.id;
@@ -318,6 +327,8 @@ export class BorrowRequestsService {
 
     const now = new Date();
     const abnormal = dto.returnCondition !== ReturnCondition.NORMAL;
+    const reportRepair = dto.reportRepair ?? abnormal;
+    const returnLocation = dto.returnLocation || request.device.location;
     const updated = await this.prisma.$transaction(async (tx) => {
       const borrow = await tx.borrowRequest.update({
         where: { id },
@@ -326,16 +337,20 @@ export class BorrowRequestsService {
           returnedAt: now,
           returnCondition: dto.returnCondition,
           returnRemark: dto.returnRemark,
+          returnLocation,
         },
       });
 
-      if (abnormal) {
-        await tx.device.update({ where: { id: request.deviceId }, data: { status: DeviceStatus.REPAIRING } });
+      if (reportRepair) {
+        await tx.device.update({
+          where: { id: request.deviceId },
+          data: { status: DeviceStatus.REPAIRING, location: returnLocation },
+        });
         await tx.repairRecord.create({
           data: {
             deviceId: request.deviceId,
             borrowRequestId: id,
-            faultDescription: dto.returnRemark,
+            faultDescription: dto.repairDescription || dto.returnRemark,
             status: RepairStatus.WAITING_ACCEPT,
           },
         });
@@ -349,7 +364,10 @@ export class BorrowRequestsService {
           },
         });
         const nextStatus = futureApproved ? DeviceStatus.RESERVED : DeviceStatus.AVAILABLE;
-        await tx.device.update({ where: { id: request.deviceId }, data: { status: nextStatus } });
+        await tx.device.update({
+          where: { id: request.deviceId },
+          data: { status: nextStatus, location: returnLocation },
+        });
       }
 
       return borrow;

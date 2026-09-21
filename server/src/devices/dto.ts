@@ -1,4 +1,4 @@
-import { IsDateString, IsNumber, IsOptional, IsString } from 'class-validator';
+import { IsDateString, IsInt, IsNumber, IsOptional, IsString, Max, Min } from 'class-validator';
 import { Type } from 'class-transformer';
 
 export class DeviceQueryDto {
@@ -28,10 +28,14 @@ export class CreateDeviceDto {
   name!: string;
 
   @IsString()
-  code!: string;
-
-  @IsString()
   type!: string;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(100)
+  quantity?: number;
 
   @IsOptional()
   @IsString()

@@ -70,21 +70,28 @@ export class DevicesService {
   }
 
   async create(dto: CreateDeviceDto, user: RequestUser) {
-    const device = await this.prisma.device.create({
-      data: {
-        ...dto,
-        purchaseDate: dto.purchaseDate ? new Date(dto.purchaseDate) : undefined,
-        warrantyExpireDate: dto.warrantyExpireDate ? new Date(dto.warrantyExpireDate) : undefined,
-      },
-    });
+    const { quantity = 1, ...deviceData } = dto;
+    const codes = await this.generateDeviceCodes(dto.type, quantity);
+    const devices = await this.prisma.$transaction(
+      codes.map((code) =>
+        this.prisma.device.create({
+          data: {
+            ...deviceData,
+            code,
+            purchaseDate: dto.purchaseDate ? new Date(dto.purchaseDate) : undefined,
+            warrantyExpireDate: dto.warrantyExpireDate ? new Date(dto.warrantyExpireDate) : undefined,
+          },
+        }),
+      ),
+    );
     await this.auditLogs.record({
       actorId: user.id,
       action: 'CREATE_DEVICE',
       targetType: 'DEVICE',
-      targetId: device.id,
-      detail: { code: device.code, name: device.name },
+      targetId: devices[0]?.id,
+      detail: { name: dto.name, type: dto.type, quantity, codes },
     });
-    return device;
+    return quantity === 1 ? devices[0] : devices;
   }
 
   async update(id: string, dto: UpdateDeviceDto, user: RequestUser) {
@@ -168,4 +175,34 @@ export class DevicesService {
     ]);
     return { borrows, repairs };
   }
+
+  private async generateDeviceCodes(type: string, quantity: number) {
+    const prefix = deviceTypePrefixes[type] || 'EQP';
+    const year = new Date().getFullYear();
+    const codePrefix = `${prefix}-${year}-`;
+    const existingDevices = await this.prisma.device.findMany({
+      where: { code: { startsWith: codePrefix } },
+      select: { code: true },
+    });
+    const maxSequence = existingDevices.reduce((max, device) => {
+      const sequence = Number(device.code.slice(codePrefix.length));
+      return Number.isFinite(sequence) ? Math.max(max, sequence) : max;
+    }, 0);
+
+    return Array.from({ length: quantity }, (_, index) =>
+      `${codePrefix}${String(maxSequence + index + 1).padStart(3, '0')}`,
+    );
+  }
 }
+
+const deviceTypePrefixes: Record<string, string> = {
+  摄影器材: 'CAM',
+  电脑设备: 'LAP',
+  测试设备: 'TST',
+  音频设备: 'AUD',
+  会议设备: 'MTG',
+  办公设备: 'OFF',
+  网络设备: 'NET',
+  存储设备: 'STO',
+  移动设备: 'MOB',
+};

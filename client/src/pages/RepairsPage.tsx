@@ -23,6 +23,7 @@ export function RepairsPage() {
   const user = JSON.parse(localStorage.getItem('user') || '{}') as User;
   const statusFilter = searchParams.get('status');
   const deviceTypeFilter = searchParams.get('deviceType');
+  const repairerFilter = searchParams.get('repairerId');
   const title = user.role === 'REPAIRER' ? '我的维修任务' : '维修管理';
   const isRepairer = user.role === 'REPAIRER';
   const subtitle = user.role === 'REPAIRER'
@@ -33,6 +34,7 @@ export function RepairsPage() {
     const params = new URLSearchParams();
     if (statusFilter) params.set('status', statusFilter);
     if (deviceTypeFilter) params.set('deviceType', deviceTypeFilter);
+    if (repairerFilter) params.set('repairerId', repairerFilter);
     const query = params.toString() ? `?${params.toString()}` : '';
     http.get(`/repairs${query}`)
       .then((res) => setRows(res as unknown as RepairRecord[]))
@@ -53,15 +55,17 @@ export function RepairsPage() {
     filterForm.setFieldsValue({
       status: statusFilter || undefined,
       deviceType: deviceTypeFilter || undefined,
+      repairerId: repairerFilter || undefined,
     });
     load();
     loadOptions();
-  }, [statusFilter, deviceTypeFilter]);
+  }, [statusFilter, deviceTypeFilter, repairerFilter]);
 
-  const applyFilters = (values: { status?: string; deviceType?: string }) => {
+  const applyFilters = (values: { status?: string; deviceType?: string; repairerId?: string }) => {
     const params: Record<string, string> = {};
     if (values.status) params.status = values.status;
     if (values.deviceType) params.deviceType = values.deviceType;
+    if (values.repairerId) params.repairerId = values.repairerId;
     setSearchParams(params);
   };
 
@@ -179,6 +183,20 @@ export function RepairsPage() {
           <Form.Item name="deviceType" label="设备类型">
             <Select allowClear placeholder="全部类型" options={deviceTypeOptions} style={{ width: 150 }} />
           </Form.Item>
+          {user.role === 'ADMIN' && (
+            <Form.Item name="repairerId" label="维修人员">
+              <Select
+                allowClear
+                showSearch
+                placeholder="全部人员"
+                optionFilterProp="label"
+                options={users
+                  .filter((item) => item.role === 'REPAIRER')
+                  .map((item) => ({ label: `${item.name} / ${item.username}`, value: item.id }))}
+                style={{ width: 160 }}
+              />
+            </Form.Item>
+          )}
           <Form.Item>
             <Space>
               <Button type="primary" htmlType="submit">查询</Button>

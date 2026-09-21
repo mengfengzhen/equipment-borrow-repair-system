@@ -163,12 +163,14 @@ export function DevicesPage() {
         warrantyExpireDate: values.warrantyExpireDate ? (values.warrantyExpireDate as dayjs.Dayjs).toISOString() : undefined,
       };
       if (editingDevice) {
-        const { code, ...updatePayload } = payload;
+        const { code, quantity, ...updatePayload } = payload;
+        void code;
+        void quantity;
         await http.patch(`/devices/${editingDevice.id}`, updatePayload);
         message.success('设备已更新');
       } else {
         await http.post('/devices', payload);
-        message.success('设备已新增');
+        message.success(Number(values.quantity || 1) > 1 ? '设备已批量入库' : '设备已新增');
       }
       setOpen(false);
       setEditingDevice(undefined);
@@ -182,7 +184,7 @@ export function DevicesPage() {
   const openCreateDevice = () => {
     setEditingDevice(undefined);
     form.resetFields();
-    form.setFieldsValue({ ownerId: user.id });
+    form.setFieldsValue({ ownerId: user.id, quantity: 1 });
     setOpen(true);
   };
 
@@ -397,7 +399,18 @@ export function DevicesPage() {
       >
         <Form form={form} layout="vertical" onFinish={submitDevice}>
           <Form.Item name="name" label="设备名称" rules={[{ required: true }]}><Input /></Form.Item>
-          <Form.Item name="code" label="设备编号" rules={[{ required: true }]}><Input disabled={Boolean(editingDevice)} /></Form.Item>
+          {editingDevice ? (
+            <Form.Item name="code" label="设备编号"><Input disabled /></Form.Item>
+          ) : (
+            <Form.Item
+              name="quantity"
+              label="入库数量"
+              tooltip="数量为 1 时单台入库，大于 1 时按相同信息批量生成多台设备，并自动生成设备编号。"
+              rules={[{ required: true, message: '请输入入库数量' }]}
+            >
+              <InputNumber min={1} max={100} precision={0} style={{ width: '100%' }} />
+            </Form.Item>
+          )}
           <Form.Item name="type" label="设备类型" rules={[{ required: true, message: '请选择设备类型' }]}>
             <Select placeholder="选择设备类型" options={deviceTypeOptions} />
           </Form.Item>

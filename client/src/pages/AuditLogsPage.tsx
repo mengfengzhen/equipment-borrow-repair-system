@@ -93,6 +93,7 @@ function formatDetailValue(key: string, value: unknown): string {
   }
   if (key === 'returnCondition') return returnConditionNames[String(value)] || String(value);
   if (key.endsWith('At') || key.endsWith('Date')) return formatDateTime(String(value));
+  if (typeof value === 'boolean') return value ? '是' : '否';
   if (typeof value === 'object') return JSON.stringify(value);
   return String(value);
 }
@@ -111,11 +112,16 @@ const detailLabelMap: Record<string, string> = {
   to: '新状态',
   returnCondition: '归还状态',
   returnRemark: '归还备注',
+  returnLocation: '归还位置',
+  reportRepair: '是否报修',
+  repairDescription: '故障描述',
   faultDescription: '故障描述',
   repairerId: '维修人员',
   status: '状态',
   result: '维修结果',
   cost: '维修费用',
+  quantity: '入库数量',
+  codes: '设备编号',
 };
 
 const returnConditionNames: Record<string, string> = {
