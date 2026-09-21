@@ -282,7 +282,7 @@ export function RepairsPage() {
       >
         <Form form={confirmForm} layout="vertical" onFinish={confirmRepair}>
           {confirming?.repairResultStatus && (
-            <Typography.Paragraph>
+            <Typography.Paragraph className="modal-helper-text">
               维修人员提交结果：{repairStatusNames[confirming.repairResultStatus] || confirming.repairResultStatus}
             </Typography.Paragraph>
           )}

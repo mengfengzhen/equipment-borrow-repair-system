@@ -843,6 +843,12 @@ body {
   border-radius: 8px;
 }
 
+.modal-helper-text.ant-typography {
+  display: block;
+  margin: -2px 0 16px;
+  line-height: 1.65;
+}
+
 .report-card {
   height: 100%;
 }

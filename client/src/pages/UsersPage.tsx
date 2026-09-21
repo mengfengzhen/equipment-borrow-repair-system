@@ -228,7 +228,7 @@ export function UsersPage() {
           <Form.Item name="active" label="账号状态" valuePropName="checked">
             <Switch checkedChildren="启用" unCheckedChildren="停用" />
           </Form.Item>
-          <Typography.Paragraph type="secondary">
+          <Typography.Paragraph className="modal-helper-text" type="secondary">
             普通员工可自助注册；部门负责人、维修人员和管理员由管理员分配，避免用户自行提升权限。
           </Typography.Paragraph>
         </Form>

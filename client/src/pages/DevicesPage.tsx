@@ -516,7 +516,7 @@ export function DevicesPage() {
       >
         <Form form={repairConfirmForm} layout="vertical" onFinish={confirmRepairFromDevice}>
           {repairConfirmDevice?.currentRepair?.repairResultStatus && (
-            <Typography.Paragraph>
+            <Typography.Paragraph className="modal-helper-text">
               维修人员提交结果：{repairStatusNames[repairConfirmDevice.currentRepair.repairResultStatus] || repairConfirmDevice.currentRepair.repairResultStatus}
             </Typography.Paragraph>
           )}
@@ -606,6 +606,22 @@ export function DevicesPage() {
         destroyOnClose
       >
         <Form form={borrowForm} layout="vertical" onFinish={submitBorrow}>
+          <Form.Item name="deviceGroupKey" label="设备型号" rules={[{ required: true, message: '请选择设备型号' }]}>
+            <Select
+              showSearch
+              placeholder="选择可申请的设备型号"
+              optionFilterProp="label"
+              onChange={(value) => {
+                setSelectedBorrowOptionKey(value);
+                borrowForm.setFieldsValue({ quantity: 1 });
+              }}
+              options={borrowOptions.filter((item) => item.availableCount > 0).map((item) => ({
+                label: `${item.name} / ${item.type} / 所选时间可用 ${item.availableCount} 台`,
+                value: item.groupKey,
+              }))}
+              notFoundContent="所选时间段暂无可申请型号"
+            />
+          </Form.Item>
           <Form.Item
             name="borrowRange"
             label="借用时间"
@@ -622,22 +638,6 @@ export function DevicesPage() {
                 }
               }}
               style={{ width: '100%' }}
-            />
-          </Form.Item>
-          <Form.Item name="deviceGroupKey" label="设备型号" rules={[{ required: true, message: '请选择设备型号' }]}>
-            <Select
-              showSearch
-              placeholder="先选择借用时间，再选择可申请的设备型号"
-              optionFilterProp="label"
-              onChange={(value) => {
-                setSelectedBorrowOptionKey(value);
-                borrowForm.setFieldsValue({ quantity: 1 });
-              }}
-              options={borrowOptions.filter((item) => item.availableCount > 0).map((item) => ({
-                label: `${item.name} / ${item.type} / 所选时间可用 ${item.availableCount} 台`,
-                value: item.groupKey,
-              }))}
-              notFoundContent="所选时间段暂无可申请型号"
             />
           </Form.Item>
           <Form.Item shouldUpdate={(prev, current) => (

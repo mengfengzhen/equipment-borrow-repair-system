@@ -390,7 +390,9 @@ export function BorrowRequestsPage() {
               </>
             ) : action?.type === 'return' ? (
               <>
-                <Typography.Text type="secondary">逐台登记归还状态、位置和是否报修。</Typography.Text>
+                <Typography.Text className="modal-helper-text" type="secondary">
+                  逐台登记归还状态、位置和是否报修。
+                </Typography.Text>
                 <Form.List name="items">
                   {(fields) => (
                     <Space direction="vertical" size={14} style={{ width: '100%' }}>
