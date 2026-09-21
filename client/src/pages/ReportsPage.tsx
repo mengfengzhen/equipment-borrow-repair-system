@@ -8,7 +8,7 @@ import { StatusTag } from '../components/StatusTag';
 import { deviceTypeOptions } from '../constants/deviceOptions';
 import { deviceStatusNames } from '../types/enums';
 import type { BorrowRequest, Department } from '../types/models';
-import { formatDateTime } from '../utils/format';
+import { formatDate } from '../utils/format';
 
 type ReportItem = { name: string; count: number };
 type TopItem = {
@@ -155,11 +155,11 @@ export function ReportsPage() {
           pagination={{ pageSize: 5, hideOnSinglePage: true }}
           locale={{ emptyText: '暂无逾期未归还设备' }}
           columns={[
-            { title: '设备', render: (_, row) => `${row.device.name}（${row.device.code}）` },
-            { title: '设备类型', render: (_, row) => row.device.type },
+            { title: '设备', render: (_, row) => row.device ? `${row.device.name}（${row.device.code}）` : renderBorrowDevices(row) },
+            { title: '设备类型', render: (_, row) => row.device?.type || row.requestedType },
             { title: '申请人', render: (_, row) => row.applicant.name },
             { title: '部门', render: (_, row) => row.department?.name || '-' },
-            { title: '预计归还', render: (_, row) => formatDateTime(row.borrowEndAt) },
+            { title: '预计归还', render: (_, row) => formatDate(row.borrowEndAt) },
             { title: '状态', width: 120, render: (_, row) => <StatusTag value={row.status} /> },
           ]}
         />
@@ -280,4 +280,9 @@ function TopDeviceTable({ rows, mode }: { rows: TopItem[]; mode: 'borrow' | 'rep
       ]}
     />
   );
+}
+
+function renderBorrowDevices(row: BorrowRequest) {
+  const names = (row.items || []).map((item) => `${item.device.name}（${item.device.code}）`);
+  return names.length ? names.join('、') : row.requestedName;
 }

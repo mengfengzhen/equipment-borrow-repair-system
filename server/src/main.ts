@@ -65,7 +65,13 @@ async function bootstrap() {
     });
   }
 
-  await app.listen(config.get<number>('PORT', 3000));
+  const port = config.get<number>('PORT', 3000);
+  const host = config.get<string>('HOST');
+  if (host) {
+    await app.listen(port, host);
+  } else {
+    await app.listen(port);
+  }
 }
 
 bootstrap();

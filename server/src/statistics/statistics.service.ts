@@ -130,7 +130,7 @@ export class StatisticsService {
     const borrowWhere = {
       ...timeWhere,
       ...(query.departmentId ? { departmentId: query.departmentId } : {}),
-      ...(query.type ? { device: { type: query.type } } : {}),
+      ...(query.type ? { items: { some: { device: { type: query.type } } } } : {}),
     };
     const repairWhere = {
       ...timeWhere,
@@ -141,7 +141,7 @@ export class StatisticsService {
       status: { in: [BorrowStatus.PICKED_UP, BorrowStatus.OVERDUE] },
       borrowEndAt: { lt: now },
       ...(query.departmentId ? { departmentId: query.departmentId } : {}),
-      ...(query.type ? { device: { type: query.type } } : {}),
+      ...(query.type ? { items: { some: { device: { type: query.type } } } } : {}),
     };
     const monthStarts = Array.from({ length: 6 }, (_, index) => {
       const date = new Date(now.getFullYear(), now.getMonth() - (5 - index), 1);
@@ -159,7 +159,11 @@ export class StatisticsService {
       this.prisma.borrowRequest.groupBy({ by: ['departmentId'], where: borrowWhere, _count: true }),
       this.prisma.borrowRequest.findMany({
         where: borrowWhere,
-        include: { device: { select: { id: true, name: true, code: true, type: true, brand: true, model: true, status: true } } },
+        include: {
+          items: {
+            include: { device: { select: { id: true, name: true, code: true, type: true, brand: true, model: true, status: true } } },
+          },
+        },
       }),
       this.prisma.repairRecord.findMany({
         where: repairWhere,
@@ -178,7 +182,9 @@ export class StatisticsService {
       this.prisma.borrowRequest.findMany({
         where: overdueWhere,
         include: {
-            device: { select: { id: true, name: true, code: true, type: true, brand: true, model: true } },
+          items: {
+            include: { device: { select: { id: true, name: true, code: true, type: true, brand: true, model: true } } },
+          },
           applicant: { select: { id: true, name: true, username: true } },
           department: { select: { id: true, name: true } },
         },
@@ -189,8 +195,8 @@ export class StatisticsService {
 
     const [statusGroups, typeGroups] = hasOperationalScope
       ? [
-          groupDevicesBy(borrowRows, repairRows, 'status'),
-          groupDevicesBy(borrowRows, repairRows, 'type'),
+          groupDevicesBy(flattenBorrowRows(borrowRows), repairRows, 'status'),
+          groupDevicesBy(flattenBorrowRows(borrowRows), repairRows, 'type'),
         ]
       : await Promise.all([
           this.prisma.device.groupBy({ by: ['status'], where: { deletedAt: null, ...deviceTypeWhere }, _count: true })
@@ -209,9 +215,9 @@ export class StatisticsService {
         name: item.departmentId ? departmentNameMap[item.departmentId] || '未知部门' : '未分配部门',
         count: item._count,
       })),
-      topBorrowed: topByDevice(borrowRows, repairRows, 'borrow'),
-      topRepaired: topByDevice(borrowRows, repairRows, 'repair'),
-      overdueBorrows: overdueRows,
+      topBorrowed: topByDevice(flattenBorrowRows(borrowRows), repairRows, 'borrow'),
+      topRepaired: topByDevice(flattenBorrowRows(borrowRows), repairRows, 'repair'),
+      overdueBorrows: overdueRows.map((row) => ({ ...row, device: row.items[0]?.device })),
       monthlyBorrows: monthStarts.map((monthStart) => {
         const monthKey = `${monthStart.getFullYear()}-${String(monthStart.getMonth() + 1).padStart(2, '0')}`;
         return {
@@ -243,6 +249,13 @@ type BorrowRankingRow = {
   device: RankingDevice;
 };
 
+type BorrowRequestRankingRow = {
+  borrowStartAt: Date;
+  borrowEndAt: Date;
+  returnedAt: Date | null;
+  items: Array<{ device: RankingDevice }>;
+};
+
 type RepairRankingRow = {
   cost: number | null;
   device: RankingDevice;
@@ -264,6 +277,17 @@ function groupDevicesBy(
   });
 
   return Array.from(counts.entries()).map(([name, count]) => ({ name, count }));
+}
+
+function flattenBorrowRows(rows: BorrowRequestRankingRow[]): BorrowRankingRow[] {
+  return rows.flatMap((row) =>
+    row.items.map((item) => ({
+      borrowStartAt: row.borrowStartAt,
+      borrowEndAt: row.borrowEndAt,
+      returnedAt: row.returnedAt,
+      device: item.device,
+    })),
+  );
 }
 
 function topByDevice(

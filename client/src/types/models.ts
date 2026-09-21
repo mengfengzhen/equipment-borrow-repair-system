@@ -41,6 +41,11 @@ export type Device = {
 export type BorrowRequest = {
   id: string;
   status: string;
+  requestedName: string;
+  requestedType: string;
+  requestedBrand?: string;
+  requestedModel?: string;
+  quantity: number;
   borrowStartAt: string;
   borrowEndAt: string;
   purpose: string;
@@ -51,7 +56,17 @@ export type BorrowRequest = {
   returnCondition?: string;
   returnRemark?: string;
   returnLocation?: string;
-  device: Device;
+  device?: Device;
+  items?: Array<{
+    id: string;
+    status: string;
+    pickedUpAt?: string;
+    returnedAt?: string;
+    returnCondition?: string;
+    returnRemark?: string;
+    returnLocation?: string;
+    device: Device;
+  }>;
   applicant: { id: string; name: string; username?: string };
   department?: { id: string; name: string };
   approvals?: Array<{

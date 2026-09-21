@@ -3,6 +3,7 @@ PRAGMA foreign_keys = OFF;
 DROP TABLE IF EXISTS "AuditLog";
 DROP TABLE IF EXISTS "RepairRecord";
 DROP TABLE IF EXISTS "BorrowApproval";
+DROP TABLE IF EXISTS "BorrowItem";
 DROP TABLE IF EXISTS "BorrowRequest";
 DROP TABLE IF EXISTS "SystemSetting";
 DROP TABLE IF EXISTS "Device";
@@ -63,7 +64,11 @@ CREATE TABLE "SystemSetting" (
 
 CREATE TABLE "BorrowRequest" (
   "id" TEXT NOT NULL PRIMARY KEY,
-  "deviceId" TEXT NOT NULL,
+  "requestedName" TEXT NOT NULL,
+  "requestedType" TEXT NOT NULL,
+  "requestedBrand" TEXT,
+  "requestedModel" TEXT,
+  "quantity" INTEGER NOT NULL DEFAULT 1,
   "applicantId" TEXT NOT NULL,
   "departmentId" TEXT,
   "borrowStartAt" DATETIME NOT NULL,
@@ -80,9 +85,24 @@ CREATE TABLE "BorrowRequest" (
   "returnLocation" TEXT,
   "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   "updatedAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  CONSTRAINT "BorrowRequest_deviceId_fkey" FOREIGN KEY ("deviceId") REFERENCES "Device" ("id") ON DELETE RESTRICT ON UPDATE CASCADE,
   CONSTRAINT "BorrowRequest_applicantId_fkey" FOREIGN KEY ("applicantId") REFERENCES "User" ("id") ON DELETE RESTRICT ON UPDATE CASCADE,
   CONSTRAINT "BorrowRequest_departmentId_fkey" FOREIGN KEY ("departmentId") REFERENCES "Department" ("id") ON DELETE SET NULL ON UPDATE CASCADE
+);
+
+CREATE TABLE "BorrowItem" (
+  "id" TEXT NOT NULL PRIMARY KEY,
+  "borrowRequestId" TEXT NOT NULL,
+  "deviceId" TEXT NOT NULL,
+  "status" TEXT NOT NULL DEFAULT 'PICKED_UP',
+  "pickedUpAt" DATETIME,
+  "returnedAt" DATETIME,
+  "returnCondition" TEXT,
+  "returnRemark" TEXT,
+  "returnLocation" TEXT,
+  "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  "updatedAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  CONSTRAINT "BorrowItem_borrowRequestId_fkey" FOREIGN KEY ("borrowRequestId") REFERENCES "BorrowRequest" ("id") ON DELETE RESTRICT ON UPDATE CASCADE,
+  CONSTRAINT "BorrowItem_deviceId_fkey" FOREIGN KEY ("deviceId") REFERENCES "Device" ("id") ON DELETE RESTRICT ON UPDATE CASCADE
 );
 
 CREATE TABLE "BorrowApproval" (
@@ -125,8 +145,10 @@ CREATE TABLE "AuditLog" (
   CONSTRAINT "AuditLog_actorId_fkey" FOREIGN KEY ("actorId") REFERENCES "User" ("id") ON DELETE SET NULL ON UPDATE CASCADE
 );
 
-CREATE INDEX "BorrowRequest_deviceId_idx" ON "BorrowRequest" ("deviceId");
 CREATE INDEX "BorrowRequest_status_idx" ON "BorrowRequest" ("status");
+CREATE UNIQUE INDEX "BorrowItem_borrowRequestId_deviceId_key" ON "BorrowItem" ("borrowRequestId", "deviceId");
+CREATE INDEX "BorrowItem_deviceId_idx" ON "BorrowItem" ("deviceId");
+CREATE INDEX "BorrowItem_borrowRequestId_idx" ON "BorrowItem" ("borrowRequestId");
 CREATE INDEX "RepairRecord_deviceId_idx" ON "RepairRecord" ("deviceId");
 CREATE INDEX "RepairRecord_status_idx" ON "RepairRecord" ("status");
 CREATE INDEX "AuditLog_createdAt_idx" ON "AuditLog" ("createdAt");

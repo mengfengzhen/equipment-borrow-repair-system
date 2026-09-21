@@ -122,7 +122,10 @@ export class RepairsService {
 
       await tx.device.update({
         where: { id: repair.deviceId },
-        data: { status: dto.status === RepairStatus.FIXED ? DeviceStatus.AVAILABLE : DeviceStatus.SCRAPPED },
+        data: {
+          status: dto.status === RepairStatus.FIXED ? DeviceStatus.AVAILABLE : DeviceStatus.SCRAPPED,
+          location: dto.location || repair.device.location,
+        },
       });
 
       return record;

@@ -3,13 +3,12 @@ import {
   ClockCircleOutlined,
   DatabaseOutlined,
   ExclamationCircleOutlined,
-  FileTextOutlined,
   LaptopOutlined,
   ToolOutlined,
   WarningOutlined,
 } from '@ant-design/icons';
 import { Alert, Button, Card, Col, List, Row, Space, Statistic, Tooltip, Typography, message } from 'antd';
-import { type ReactNode, useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { http } from '../api/http';
 import { formatAuditAction } from '../types/enums';
@@ -89,50 +88,11 @@ export function DashboardPage() {
   const stats = statsByRole[role as keyof typeof statsByRole] || statsByRole.USER;
 
   const primaryPath = role === 'REPAIRER' ? '/repairs' : role === 'USER' ? '/devices' : '/borrows';
-  const availableRate = data?.totalDevices ? Math.round(((data.availableDevices || 0) / data.totalDevices) * 100) : 0;
   const quickActions = [
     { label: copy.primaryAction, path: primaryPath, type: 'primary' as const },
     { label: '查看设备列表', path: '/devices' },
     ...(role === 'ADMIN' ? [{ label: '查看操作日志', path: '/logs' }] : []),
   ];
-
-  const heroSummaryByRole = {
-    ADMIN: [
-      ['可用率', `${availableRate}%`],
-      ['待交付', Number(data?.waitingPickup || 0)],
-      ['风险项', Number(data?.overdueBorrows || 0)],
-    ],
-    MANAGER: [
-      ['待审批', Number(data?.managerPendingApprovals || 0)],
-      ['需补充', Number(data?.managerNeedMoreInfo || 0)],
-      ['逾期风险', Number(data?.managerOverdueBorrows || 0)],
-    ],
-    USER: [
-      ['我的设备', Number(data?.userActiveBorrows || 0)],
-      ['我的申请', Number(data?.userPendingBorrows || 0) + Number(data?.userNeedMoreInfo || 0)],
-      ['待领取', Number(data?.userApprovedBorrows || 0)],
-    ],
-    REPAIRER: [
-      ['待维修', Number(data?.repairWaitingAccept || 0)],
-      ['维修中', Number(data?.repairMyRepairing || 0)],
-      ['待配件', Number(data?.repairMyWaitingParts || 0)],
-    ],
-  };
-  const heroSummary = heroSummaryByRole[role as keyof typeof heroSummaryByRole] || heroSummaryByRole.USER;
-  const heroSummaryIconMap: Record<string, ReactNode> = {
-    可用率: <CheckCircleOutlined />,
-    待交付: <ClockCircleOutlined />,
-    风险项: <WarningOutlined />,
-    待审批: <ClockCircleOutlined />,
-    需补充: <ExclamationCircleOutlined />,
-    逾期风险: <WarningOutlined />,
-    我的设备: <LaptopOutlined />,
-    我的申请: <FileTextOutlined />,
-    待领取: <DatabaseOutlined />,
-    待维修: <ToolOutlined />,
-    维修中: <ToolOutlined />,
-    待配件: <ExclamationCircleOutlined />,
-  };
 
   const definitionsByRole = {
     ADMIN: [
@@ -216,6 +176,7 @@ export function DashboardPage() {
     },
   ];
   const dashboardCards = [...stats, ...extraDashboardCards];
+  const showRecentActivity = !['USER', 'REPAIRER'].includes(role);
 
   return (
     <div className="dashboard-shell">
@@ -224,23 +185,14 @@ export function DashboardPage() {
           <div className="hero-kicker">设备借用与维修管理</div>
           <Typography.Title level={2}>{copy.title}</Typography.Title>
           <Typography.Paragraph>{copy.subtitle}</Typography.Paragraph>
-          <Space wrap className="hero-actions">
-            {quickActions.map((item) => (
-              <Button key={`${item.label}-${item.path}`} type={item.type} onClick={() => navigate(item.path)}>
-                {item.label}
-              </Button>
-            ))}
-          </Space>
         </div>
-        <div className="hero-summary">
-          {heroSummary.map(([label, value]) => (
-            <div className="hero-summary-card" key={label}>
-              <span className="hero-summary-icon">{heroSummaryIconMap[String(label)] || <DatabaseOutlined />}</span>
-              <span className="hero-summary-label">{label}</span>
-              <strong>{value}</strong>
-            </div>
+        <Space wrap className="hero-actions">
+          {quickActions.map((item) => (
+            <Button key={`${item.label}-${item.path}`} type={item.type} onClick={() => navigate(item.path)}>
+              {item.label}
+            </Button>
           ))}
-        </div>
+        </Space>
       </div>
       {Number(data?.overdueBorrows || 0) > 0 && (
         <Alert
@@ -276,7 +228,7 @@ export function DashboardPage() {
         ))}
       </Row>
       <Row gutter={[16, 16]}>
-        <Col xs={24} lg={role === 'USER' ? 24 : 10}>
+        <Col xs={24} lg={showRecentActivity ? 10 : 24}>
           <Card
             title={role === 'USER' ? '我的借用状态' : '设备状态分布'}
             className="section-card status-distribution-card"
@@ -332,7 +284,7 @@ export function DashboardPage() {
             </div>
           </Card>
         </Col>
-        {role !== 'USER' && (
+        {showRecentActivity && (
           <Col xs={24} lg={14}>
             <Card title="最近操作" className="section-card recent-activity-card" extra={user.role === 'ADMIN' ? <Button type="link" onClick={() => navigate('/logs')}>全部日志</Button> : null}>
               <List

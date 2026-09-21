@@ -1,4 +1,4 @@
-import { IsBoolean, IsDateString, IsIn, IsInt, IsOptional, IsString, Max, Min, MinLength } from 'class-validator';
+import { IsArray, IsBoolean, IsDateString, IsIn, IsInt, IsOptional, IsString, Max, Min, MinLength, ValidateNested } from 'class-validator';
 import { Type } from 'class-transformer';
 import { ReturnCondition } from '../common/constants';
 
@@ -69,6 +69,17 @@ export class ApprovalDto {
   comment!: string;
 }
 
+export class PickupBorrowDto {
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  deviceIds?: string[];
+
+  @IsOptional()
+  @IsString()
+  preferredLocation?: string;
+}
+
 export class SupplementDto {
   @IsString()
   @MinLength(2)
@@ -83,7 +94,10 @@ export class SupplementDto {
   attachmentNames?: string;
 }
 
-export class ReturnBorrowDto {
+export class ReturnBorrowItemDto {
+  @IsString()
+  deviceId!: string;
+
   @IsIn([
     ReturnCondition.NORMAL,
     ReturnCondition.DAMAGED,
@@ -107,4 +121,38 @@ export class ReturnBorrowDto {
   @IsOptional()
   @IsString()
   repairDescription?: string;
+}
+
+export class ReturnBorrowDto {
+  @IsOptional()
+  @IsIn([
+    ReturnCondition.NORMAL,
+    ReturnCondition.DAMAGED,
+    ReturnCondition.MISSING_PARTS,
+    ReturnCondition.ABNORMAL,
+  ])
+  returnCondition?: string;
+
+  @IsOptional()
+  @IsString()
+  @MinLength(2)
+  returnRemark?: string;
+
+  @IsOptional()
+  @IsString()
+  returnLocation?: string;
+
+  @IsOptional()
+  @IsBoolean()
+  reportRepair?: boolean;
+
+  @IsOptional()
+  @IsString()
+  repairDescription?: string;
+
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => ReturnBorrowItemDto)
+  items?: ReturnBorrowItemDto[];
 }

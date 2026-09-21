@@ -7,6 +7,7 @@ async function main() {
   await prisma.auditLog.deleteMany();
   await prisma.repairRecord.deleteMany();
   await prisma.borrowApproval.deleteMany();
+  await prisma.borrowItem.deleteMany();
   await prisma.borrowRequest.deleteMany();
   await prisma.device.deleteMany();
   await prisma.user.deleteMany();
@@ -109,7 +110,7 @@ async function main() {
         purchaseDate: new Date('2025-03-01'),
         warrantyExpireDate: new Date('2028-03-01'),
         value: 16800,
-        status: 'RESERVED',
+        status: 'AVAILABLE',
         description: '用于活动拍摄和产品宣传素材采集。',
       },
       {
@@ -288,7 +289,11 @@ async function main() {
   const networkTester = await prisma.device.findUniqueOrThrow({ where: { code: 'NET-2026-003' } });
   await prisma.borrowRequest.create({
     data: {
-      deviceId: camera.id,
+      requestedName: camera.name,
+      requestedType: camera.type,
+      requestedBrand: camera.brand,
+      requestedModel: camera.model,
+      quantity: 1,
       applicantId: user.id,
       departmentId: product.id,
       borrowStartAt: new Date(Date.now() + 2 * 86400000),
@@ -301,7 +306,11 @@ async function main() {
 
   const laptopBorrow = await prisma.borrowRequest.create({
     data: {
-      deviceId: laptop.id,
+      requestedName: laptop.name,
+      requestedType: laptop.type,
+      requestedBrand: laptop.brand,
+      requestedModel: laptop.model,
+      quantity: 1,
       applicantId: user2.id,
       departmentId: product.id,
       borrowStartAt: new Date(Date.now() - 2 * 86400000),
@@ -310,6 +319,15 @@ async function main() {
       remark: '用于外出驻场排查问题。',
       status: 'PICKED_UP',
       pickedUpAt: new Date(Date.now() - 2 * 86400000),
+    },
+  });
+
+  await prisma.borrowItem.create({
+    data: {
+      borrowRequestId: laptopBorrow.id,
+      deviceId: laptop.id,
+      status: 'PICKED_UP',
+      pickedUpAt: laptopBorrow.pickedUpAt,
     },
   });
 

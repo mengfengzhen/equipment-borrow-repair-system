@@ -7,9 +7,10 @@ import { useEffect, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { http } from '../api/http';
 import { StatusTag } from '../components/StatusTag';
+import { deviceLocationOptions } from '../constants/deviceOptions';
 import { borrowStatusNames } from '../types/enums';
-import { BorrowRequest, Department, User } from '../types/models';
-import { formatDateTime } from '../utils/format';
+import { BorrowRequest, Department, Device, User } from '../types/models';
+import { formatDateRange, formatDateTime } from '../utils/format';
 import { parseAttachments, serializeAttachments, uploadFiles } from '../utils/upload';
 
 type Action = 'approve' | 'reject' | 'need-more-info' | 'pickup' | 'return' | 'cancel' | 'supplement';
@@ -21,6 +22,7 @@ export function BorrowRequestsPage() {
   const [settings, setSettings] = useState<{ approvalRequired: boolean }>();
   const [users, setUsers] = useState<User[]>([]);
   const [departments, setDepartments] = useState<Department[]>([]);
+  const [availableDevices, setAvailableDevices] = useState<Device[]>([]);
   const [form] = Form.useForm();
   const [filterForm] = Form.useForm();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -50,12 +52,14 @@ export function BorrowRequestsPage() {
       http.get('/settings'),
       http.get('/departments'),
       user.role === 'ADMIN' ? http.get('/users') : Promise.resolve([]),
+      user.role === 'ADMIN' ? http.get('/devices?status=AVAILABLE') : Promise.resolve([]),
     ])
-      .then(([borrowRes, settingRes, departmentRes, userRes]) => {
+      .then(([borrowRes, settingRes, departmentRes, userRes, deviceRes]) => {
         setRows(borrowRes as unknown as BorrowRequest[]);
         setSettings(settingRes as unknown as { approvalRequired: boolean });
         setDepartments(departmentRes as unknown as Department[]);
         setUsers(userRes as unknown as User[]);
+        setAvailableDevices(deviceRes as unknown as Device[]);
       })
       .catch((error) => message.error((error as Error).message));
   };
@@ -102,26 +106,46 @@ export function BorrowRequestsPage() {
     }
   };
 
+  const loadPickupDevices = async (row: BorrowRequest) => {
+    if (user.role !== 'ADMIN') return;
+    try {
+      const result = await http.get(`/borrow-requests/${row.id}/available-devices`);
+      setAvailableDevices(result as unknown as Device[]);
+    } catch (error) {
+      setAvailableDevices([]);
+      message.error((error as Error).message);
+    }
+  };
+
   const openAction = (type: Action, row: BorrowRequest) => {
     form.resetFields();
+    setAvailableDevices([]);
     if (type === 'supplement') {
       form.setFieldsValue({ purpose: row.purpose, remark: row.remark });
     }
+    if (type === 'pickup') {
+      loadPickupDevices(row);
+    }
     if (type === 'return') {
-      form.setFieldsValue({
+      const returnItems = (row.items || []).map((item) => ({
+        deviceId: item.device.id,
         returnCondition: 'NORMAL',
-        returnLocation: row.device.location,
+        returnLocation: item.device.location,
+        returnRemark: '正常归还',
         reportRepair: false,
+      }));
+      form.setFieldsValue({
+        items: returnItems,
       });
     }
     setAction({ type, row });
   };
 
-  const submitAction = async (values: Record<string, string | UploadFile[]>) => {
+  const submitAction = async (values: Record<string, unknown>) => {
     if (!action) return;
     try {
       if (action.type === 'pickup') {
-        await http.patch(`/borrow-requests/${action.row.id}/pickup`);
+        await http.patch(`/borrow-requests/${action.row.id}/pickup`, values);
       } else if (action.type === 'cancel') {
         await http.patch(`/borrow-requests/${action.row.id}/cancel`);
       } else if (action.type === 'return') {
@@ -147,10 +171,11 @@ export function BorrowRequestsPage() {
   };
 
   const columns: ColumnsType<BorrowRequest> = [
-    { title: '设备', render: (_, row) => row.device.name },
+    { title: '申请设备', render: (_, row) => requestDeviceText(row) },
+    { title: '数量', width: 80, render: (_, row) => `${row.quantity || 1} 台` },
     { title: '申请人', render: (_, row) => row.applicant.name },
     { title: '部门', render: (_, row) => row.department?.name || '-' },
-    { title: '借用时间', render: (_, row) => `${formatDateTime(row.borrowStartAt)} 至 ${formatDateTime(row.borrowEndAt)}` },
+    { title: '借用时间', render: (_, row) => formatDateRange(row.borrowStartAt, row.borrowEndAt) },
     { title: '用途', dataIndex: 'purpose' },
     { title: '状态', render: (_, row) => <StatusTag value={row.status} /> },
     {
@@ -175,7 +200,7 @@ export function BorrowRequestsPage() {
         }
 
         if (user.role === 'ADMIN' && row.status === 'APPROVED') {
-          actions.push(<Button key="pickup" className="table-action-button" onClick={() => openAction('pickup', row)}>确认领取</Button>);
+          actions.push(<Button key="pickup" className="table-action-button" onClick={() => openAction('pickup', row)}>确认交付</Button>);
         }
 
         if (user.role === 'ADMIN' && ['PICKED_UP', 'OVERDUE'].includes(row.status)) {
@@ -223,9 +248,9 @@ export function BorrowRequestsPage() {
               pagination={false}
               locale={{ emptyText: '暂无正在借用的设备' }}
               columns={[
-                { title: '设备', render: (_, row) => row.device.name },
-                { title: '设备编号', render: (_, row) => row.device.code },
-                { title: '借用时间', render: (_, row) => `${formatDateTime(row.borrowStartAt)} 至 ${formatDateTime(row.borrowEndAt)}` },
+                { title: '申请设备', render: (_, row) => requestDeviceText(row) },
+                { title: '设备编号', render: (_, row) => renderItemCodes(row) },
+                { title: '借用时间', render: (_, row) => formatDateRange(row.borrowStartAt, row.borrowEndAt) },
                 { title: '用途', dataIndex: 'purpose' },
                 { title: '状态', render: (_, row) => <StatusTag value={row.status} /> },
               ]}
@@ -292,6 +317,7 @@ export function BorrowRequestsPage() {
             <div>
               <p>备注：{row.remark || '-'}</p>
               <p>附件：{renderAttachments(row.attachmentNames)}</p>
+              <p>已交付设备：{renderBorrowItems(row)}</p>
               <p>归还位置：{row.returnLocation || '-'}</p>
               <p>归还备注：{row.returnRemark || '-'}</p>
               <div>审批记录：{renderApprovals(row.approvals)}</div>
@@ -303,11 +329,11 @@ export function BorrowRequestsPage() {
         title={actionTitle(action?.type)}
         open={Boolean(action)}
         onCancel={() => setAction(undefined)}
-        onOk={() => ['pickup', 'cancel'].includes(action?.type || '') ? submitAction({}) : form.submit()}
+        onOk={() => action?.type === 'cancel' ? submitAction({}) : form.submit()}
         destroyOnClose
       >
-        {action?.type === 'pickup' || action?.type === 'cancel' ? (
-          <p>{action.type === 'pickup' ? '确认设备已经交付给申请人？此操作会把设备状态改为借出。' : '确认取消这条申请？如果申请已审批通过，系统会释放对应设备占用。'}</p>
+        {action?.type === 'cancel' ? (
+          <p>确认取消这条申请？</p>
         ) : (
           <Form form={form} layout="vertical" onFinish={submitAction}>
             {action?.type === 'supplement' ? (
@@ -329,35 +355,103 @@ export function BorrowRequestsPage() {
                   </Upload>
                 </Form.Item>
               </>
-            ) : action?.type === 'return' ? (
+            ) : action?.type === 'pickup' ? (
               <>
-                <Form.Item name="returnCondition" label="归还状态" rules={[{ required: true }]}>
+                <Alert
+                  type="info"
+                  showIcon
+                  message={`需要交付 ${action.row.quantity || 1} 台：${requestDeviceText(action.row)}`}
+                  description="不手动选择时，系统会自动分配可用设备；选择位置后会优先从该位置分配。"
+                />
+                <Form.Item name="preferredLocation" label="优先位置">
                   <Select
-                    onChange={(value) => form.setFieldsValue({ reportRepair: value !== 'NORMAL' })}
-                    options={[
-                      { label: '正常', value: 'NORMAL' },
-                      { label: '损坏', value: 'DAMAGED' },
-                      { label: '缺件', value: 'MISSING_PARTS' },
-                      { label: '异常', value: 'ABNORMAL' },
-                    ]}
+                    allowClear
+                    placeholder="不限位置"
+                    options={uniqueLocations(availableDevices).map((location) => ({ label: location, value: location }))}
                   />
                 </Form.Item>
-                <Form.Item name="returnLocation" label="归还位置" rules={[{ required: true, message: '请填写归还位置' }]}>
-                  <Input placeholder="默认使用设备当前存放地点，可手动修改" />
+                <Form.Item shouldUpdate={(prev, current) => prev.preferredLocation !== current.preferredLocation} noStyle>
+                  {({ getFieldValue }) => {
+                    const preferredLocation = getFieldValue('preferredLocation');
+                    const filteredDevices = preferredLocation
+                      ? availableDevices.filter((device) => device.location === preferredLocation)
+                      : availableDevices;
+                    return (
+                      <Form.Item name="deviceIds" label="手动选择设备">
+                        <Select
+                          allowClear
+                          mode="multiple"
+                          placeholder="留空则自动分配"
+                          maxCount={action.row.quantity || 1}
+                          optionFilterProp="label"
+                          options={filteredDevices.map((device) => ({
+                            label: `${device.name} / ${device.code} / ${device.location}`,
+                            value: device.id,
+                          }))}
+                        />
+                      </Form.Item>
+                    );
+                  }}
                 </Form.Item>
-                <Form.Item name="returnRemark" label="归还备注" rules={[{ required: true }]}>
-                  <Input.TextArea rows={3} />
-                </Form.Item>
-                <Form.Item name="reportRepair" label="是否报修" valuePropName="checked">
-                  <Switch />
-                </Form.Item>
-                <Form.Item shouldUpdate={(prev, current) => prev.reportRepair !== current.reportRepair} noStyle>
-                  {({ getFieldValue }) => getFieldValue('reportRepair') ? (
-                    <Form.Item name="repairDescription" label="故障描述">
-                      <Input.TextArea rows={3} placeholder="不填写时默认使用归还备注生成维修单" />
-                    </Form.Item>
-                  ) : null}
-                </Form.Item>
+              </>
+            ) : action?.type === 'return' ? (
+              <>
+                <Typography.Text type="secondary">逐台登记归还状态、位置和是否报修。</Typography.Text>
+                <Form.List name="items">
+                  {(fields) => (
+                    <Space direction="vertical" size={14} style={{ width: '100%' }}>
+                      {fields.map((field, index) => {
+                        const borrowItem = action.row.items?.[index];
+                        return (
+                          <div key={field.key} className="return-item-panel">
+                            <Typography.Text strong>
+                              {borrowItem ? `${borrowItem.device.name}（${borrowItem.device.code}）` : `设备 ${index + 1}`}
+                            </Typography.Text>
+                            <Form.Item name={[field.name, 'deviceId']} hidden>
+                              <Input />
+                            </Form.Item>
+                            <Form.Item name={[field.name, 'returnCondition']} label="归还状态" rules={[{ required: true }]}>
+                              <Select
+                                onChange={(value) => {
+                                  const items = form.getFieldValue('items') || [];
+                                  items[index] = { ...items[index], reportRepair: value !== 'NORMAL' };
+                                  form.setFieldsValue({ items });
+                                }}
+                                options={[
+                                  { label: '正常', value: 'NORMAL' },
+                                  { label: '损坏', value: 'DAMAGED' },
+                                  { label: '缺件', value: 'MISSING_PARTS' },
+                                  { label: '异常', value: 'ABNORMAL' },
+                                ]}
+                              />
+                            </Form.Item>
+                            <Form.Item name={[field.name, 'returnLocation']} label="归还位置" rules={[{ required: true, message: '请选择归还位置' }]}>
+                              <Select
+                                showSearch
+                                placeholder="选择归还位置"
+                                optionFilterProp="label"
+                                options={deviceLocationOptions}
+                              />
+                            </Form.Item>
+                            <Form.Item name={[field.name, 'returnRemark']} label="归还备注" rules={[{ required: true, message: '请填写归还备注' }]}>
+                              <Input.TextArea rows={2} />
+                            </Form.Item>
+                            <Form.Item name={[field.name, 'reportRepair']} label="是否报修" valuePropName="checked">
+                              <Switch />
+                            </Form.Item>
+                            <Form.Item shouldUpdate={(prev, current) => prev.items?.[index]?.reportRepair !== current.items?.[index]?.reportRepair} noStyle>
+                              {({ getFieldValue }) => getFieldValue(['items', index, 'reportRepair']) ? (
+                                <Form.Item name={[field.name, 'repairDescription']} label="故障描述">
+                                  <Input.TextArea rows={2} placeholder="不填写时默认使用归还备注生成维修单" />
+                                </Form.Item>
+                              ) : null}
+                            </Form.Item>
+                          </div>
+                        );
+                      })}
+                    </Space>
+                  )}
+                </Form.List>
               </>
             ) : (
               <Form.Item name="comment" label="审批意见" rules={[{ required: true }]}>
@@ -377,12 +471,39 @@ function uniqueApplicants(rows: BorrowRequest[]) {
   return Array.from(map.values());
 }
 
+function requestDeviceText(row: BorrowRequest) {
+  const modelName = [row.requestedBrand, row.requestedModel].filter(Boolean).join(' ');
+  return `${modelName || row.requestedName || row.requestedType} / ${row.requestedType}`;
+}
+
+function renderItemCodes(row: BorrowRequest) {
+  const codes = (row.items || []).map((item) => item.device.code);
+  return codes.length ? codes.join('、') : '-';
+}
+
+function renderBorrowItems(row: BorrowRequest) {
+  if (!row.items?.length) return '-';
+  return (
+    <Space direction="vertical" size={2}>
+      {row.items.map((item) => (
+        <span key={item.id}>
+          {item.device.name}（{item.device.code} / {item.device.location}）
+        </span>
+      ))}
+    </Space>
+  );
+}
+
+function uniqueLocations(devices: Device[]) {
+  return Array.from(new Set(devices.map((device) => device.location).filter(Boolean)));
+}
+
 function actionTitle(type?: Action) {
   const titles: Record<Action, string> = {
     approve: '审批通过',
     reject: '审批驳回',
     'need-more-info': '要求补充信息',
-    pickup: '确认领取',
+    pickup: '确认交付',
     return: '登记归还',
     cancel: '取消申请',
     supplement: '补充申请资料',

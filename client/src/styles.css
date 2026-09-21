@@ -376,9 +376,9 @@ body {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 28px;
-  margin-bottom: 18px;
-  padding: 28px 36px;
+  gap: 24px;
+  margin-bottom: 14px;
+  padding: 20px 36px;
   border: 1px solid #d5deea;
   border-radius: 12px;
   background: #fff;
@@ -387,7 +387,7 @@ body {
 .dashboard-shell {
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 14px;
 }
 
 .dashboard-risk-alert {
@@ -395,28 +395,28 @@ body {
 }
 
 .dashboard-hero {
-  min-height: 184px;
+  min-height: 128px;
   align-items: center;
   border-color: #d6e0ec;
   background:
     linear-gradient(90deg, rgba(255, 255, 255, 0.99) 0%, rgba(255, 255, 255, 0.98) 50%, rgba(248, 252, 255, 0.98) 100%),
     #fff;
   color: #0d2f56;
-  box-shadow: 0 14px 30px rgba(15, 40, 70, 0.06);
+  box-shadow: 0 10px 24px rgba(15, 40, 70, 0.05);
 }
 
 .dashboard-hero-copy {
   min-width: 300px;
-  max-width: 680px;
-  flex: 1 1 340px;
+  max-width: 920px;
+  flex: 1 1 auto;
 }
 
 .hero-kicker {
   display: inline-flex;
   align-items: center;
-  min-height: 26px;
-  margin-bottom: 12px;
-  padding: 2px 12px;
+  min-height: 24px;
+  margin-bottom: 8px;
+  padding: 1px 11px;
   border: 1px solid #dce8f8;
   border-radius: 8px;
   background: #f4f8ff;
@@ -434,11 +434,14 @@ body {
   max-width: 760px;
   color: #4c5f75;
   font-size: 14px;
-  line-height: 1.62;
+  line-height: 1.5;
 }
 
 .hero-actions {
-  margin-top: 18px;
+  flex: 0 0 auto;
+  justify-content: flex-end;
+  max-width: 520px;
+  margin-left: auto;
 }
 
 .dashboard-hero .hero-actions .ant-btn {
@@ -508,9 +511,9 @@ body {
 }
 
 .hero-panel h2.ant-typography {
-  margin: 0 0 10px;
+  margin: 0 0 8px;
   color: #102b4b;
-  font-size: 28px;
+  font-size: 26px;
   line-height: 1.22;
   font-weight: 700;
   letter-spacing: 0;
@@ -1128,6 +1131,17 @@ body {
   width: 100%;
 }
 
+.return-item-panel {
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  padding: 12px;
+  background: #fafafa;
+}
+
+.return-item-panel .ant-form-item {
+  margin-bottom: 10px;
+}
+
 .app-sider .ant-menu {
   border-inline-end: 0 !important;
   padding: 4px 10px;
@@ -1202,21 +1216,18 @@ body {
   }
 
   .hero-panel {
-    padding: 28px;
+    padding: 22px 24px;
   }
 
   .dashboard-hero-copy {
     min-width: 0;
   }
 
-  .hero-summary {
+  .hero-actions {
     width: 100%;
-    min-width: 0;
-    grid-template-columns: 1fr;
-  }
-
-  .hero-summary-card {
-    min-height: 112px;
+    max-width: none;
+    justify-content: flex-start;
+    margin-left: 0;
   }
 
   .header-user-area {

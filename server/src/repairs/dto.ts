@@ -57,4 +57,8 @@ export class ConfirmRepairDto {
   @IsOptional()
   @IsString()
   result?: string;
+
+  @IsOptional()
+  @IsString()
+  location?: string;
 }

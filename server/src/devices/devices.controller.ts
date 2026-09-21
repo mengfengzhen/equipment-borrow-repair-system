@@ -6,7 +6,7 @@ import { DeviceStatus, Roles } from '../common/constants';
 import { CurrentUser, RequestUser } from '../common/current-user.decorator';
 import { RequireRoles } from '../common/roles.decorator';
 import { RolesGuard } from '../common/roles.guard';
-import { CreateDeviceDto, DeviceQueryDto, UpdateDeviceDto } from './dto';
+import { BorrowOptionsQueryDto, CreateDeviceDto, DeviceQueryDto, UpdateDeviceDto } from './dto';
 import { DevicesService } from './devices.service';
 
 @ApiTags('devices')
@@ -26,8 +26,8 @@ export class DevicesController {
 
   @Get('borrow-options')
   @RequireRoles(Roles.USER)
-  borrowOptions() {
-    return this.devicesService.borrowOptions();
+  borrowOptions(@Query() query: BorrowOptionsQueryDto) {
+    return this.devicesService.borrowOptions(query);
   }
 
   @Get(':id')

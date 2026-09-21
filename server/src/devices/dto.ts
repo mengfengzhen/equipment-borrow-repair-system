@@ -27,6 +27,16 @@ export class DeviceQueryDto {
   scope?: string;
 }
 
+export class BorrowOptionsQueryDto {
+  @IsOptional()
+  @IsDateString()
+  borrowStartAt?: string;
+
+  @IsOptional()
+  @IsDateString()
+  borrowEndAt?: string;
+}
+
 export class CreateDeviceDto {
   @IsString()
   name!: string;

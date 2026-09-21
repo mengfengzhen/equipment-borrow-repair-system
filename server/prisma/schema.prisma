@@ -58,7 +58,7 @@ model Device {
   deletedAt          DateTime?
 
   owner          User?           @relation("DeviceOwner", fields: [ownerId], references: [id])
-  borrowRequests BorrowRequest[]
+  borrowItems    BorrowItem[]
   repairRecords  RepairRecord[]
 }
 
@@ -71,7 +71,11 @@ model SystemSetting {
 
 model BorrowRequest {
   id               String   @id @default(cuid())
-  deviceId         String
+  requestedName    String
+  requestedType    String
+  requestedBrand   String?
+  requestedModel   String?
+  quantity         Int      @default(1)
   applicantId      String
   departmentId     String?
   borrowStartAt    DateTime
@@ -89,11 +93,32 @@ model BorrowRequest {
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
 
-  device      Device           @relation(fields: [deviceId], references: [id])
   applicant   User             @relation("BorrowApplicant", fields: [applicantId], references: [id])
   department  Department?      @relation(fields: [departmentId], references: [id])
   approvals   BorrowApproval[]
+  items       BorrowItem[]
   repairs     RepairRecord[]
+}
+
+model BorrowItem {
+  id              String   @id @default(cuid())
+  borrowRequestId String
+  deviceId        String
+  status          String   @default("PICKED_UP")
+  pickedUpAt      DateTime?
+  returnedAt      DateTime?
+  returnCondition String?
+  returnRemark    String?
+  returnLocation  String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  borrowRequest BorrowRequest @relation(fields: [borrowRequestId], references: [id])
+  device        Device        @relation(fields: [deviceId], references: [id])
+
+  @@unique([borrowRequestId, deviceId])
+  @@index([deviceId])
+  @@index([borrowRequestId])
 }
 
 model BorrowApproval {

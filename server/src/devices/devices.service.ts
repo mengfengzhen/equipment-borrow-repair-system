@@ -1,10 +1,10 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
-import { BorrowStatus, DeviceStatus, RepairStatus, Roles } from '../common/constants';
+import { activeBorrowStatuses, BorrowStatus, DeviceStatus, RepairStatus, Roles } from '../common/constants';
 import { RequestUser } from '../common/current-user.decorator';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import { PrismaService } from '../prisma/prisma.service';
-import { CreateDeviceDto, DeviceQueryDto, UpdateDeviceDto } from './dto';
+import { BorrowOptionsQueryDto, CreateDeviceDto, DeviceQueryDto, UpdateDeviceDto } from './dto';
 
 @Injectable()
 export class DevicesService {
@@ -34,9 +34,9 @@ export class DevicesService {
         query.location ? { location: query.location } : {},
         onlyMyDevices
           ? {
-              borrowRequests: {
+              borrowItems: {
                 some: {
-                  applicantId: user.id,
+                  borrowRequest: { applicantId: user.id },
                   status: { in: [BorrowStatus.APPROVED, BorrowStatus.PICKED_UP, BorrowStatus.OVERDUE] },
                 },
               },
@@ -50,11 +50,11 @@ export class DevicesService {
       orderBy: { createdAt: 'desc' },
       include: {
         owner: { select: { id: true, name: true, username: true } },
-        borrowRequests: {
+        borrowItems: {
           where: { status: { in: [BorrowStatus.PICKED_UP, BorrowStatus.OVERDUE] } },
           orderBy: { pickedUpAt: 'desc' },
           take: 1,
-          include: { applicant: { select: { id: true, name: true, username: true } } },
+          include: { borrowRequest: { include: { applicant: { select: { id: true, name: true, username: true } } } } },
         },
         repairRecords: {
           where: { status: RepairStatus.WAITING_CONFIRM },
@@ -66,21 +66,29 @@ export class DevicesService {
     });
 
     return devices.map((device) => {
-      const [activeBorrow] = device.borrowRequests;
       const [currentRepair] = device.repairRecords;
-      const { borrowRequests, repairRecords, ...rest } = device;
+      const [activeBorrowItem] = device.borrowItems;
+      const { borrowItems, repairRecords, ...rest } = device;
       void repairRecords;
       return {
         ...rest,
-        currentBorrower: activeBorrow?.applicant,
+        currentBorrower: activeBorrowItem?.borrowRequest.applicant,
         currentRepair,
       };
     });
   }
 
-  async borrowOptions() {
+  async borrowOptions(query: BorrowOptionsQueryDto = {}) {
+    const start = query.borrowStartAt ? new Date(query.borrowStartAt) : undefined;
+    const end = query.borrowEndAt ? new Date(query.borrowEndAt) : undefined;
+    const shouldApplySchedule = start && end && !Number.isNaN(start.getTime()) && !Number.isNaN(end.getTime()) && start < end;
     const devices = await this.prisma.device.findMany({
-      where: { deletedAt: null, status: DeviceStatus.AVAILABLE },
+      where: {
+        deletedAt: null,
+        status: shouldApplySchedule
+          ? { notIn: [DeviceStatus.DISABLED, DeviceStatus.SCRAPPED, DeviceStatus.REPAIRING] }
+          : DeviceStatus.AVAILABLE,
+      },
       orderBy: [{ type: 'asc' }, { brand: 'asc' }, { model: 'asc' }, { name: 'asc' }],
       select: {
         id: true,
@@ -100,8 +108,10 @@ export class DevicesService {
       model?: string | null;
       availableCount: number;
       locations: Set<string>;
-      sampleDeviceId: string;
-    }>();
+        sampleDeviceId: string;
+      }>();
+
+    const occupiedByGroup = shouldApplySchedule ? await this.countOccupiedByGroup(start, end) : new Map<string, number>();
 
     devices.forEach((device) => {
       const groupKey = buildDeviceGroupKey(device);
@@ -122,8 +132,31 @@ export class DevicesService {
 
     return Array.from(groups.values()).map((group) => ({
       ...group,
+      availableCount: Math.max(0, group.availableCount - (occupiedByGroup.get(group.groupKey) || 0)),
       locations: Array.from(group.locations),
     }));
+  }
+
+  private async countOccupiedByGroup(start: Date, end: Date) {
+    const requests = await this.prisma.borrowRequest.findMany({
+      where: {
+        status: { in: activeBorrowStatuses },
+        borrowStartAt: { lt: end },
+        borrowEndAt: { gt: start },
+      },
+      select: {
+        requestedType: true,
+        requestedBrand: true,
+        requestedModel: true,
+        quantity: true,
+      },
+    });
+    const occupied = new Map<string, number>();
+    requests.forEach((request) => {
+      const groupKey = [request.requestedType, request.requestedBrand || '', request.requestedModel || ''].join('::');
+      occupied.set(groupKey, (occupied.get(groupKey) || 0) + request.quantity);
+    });
+    return occupied;
   }
 
   async get(id: string) {
@@ -231,9 +264,13 @@ export class DevicesService {
     await this.get(id);
     const [borrows, repairs] = await Promise.all([
       this.prisma.borrowRequest.findMany({
-        where: { deviceId: id },
+        where: { items: { some: { deviceId: id } } },
         orderBy: { createdAt: 'desc' },
-        include: { applicant: { select: { id: true, name: true } }, approvals: true },
+        include: {
+          applicant: { select: { id: true, name: true } },
+          approvals: true,
+          items: { include: { device: true } },
+        },
       }),
       this.prisma.repairRecord.findMany({
         where: { deviceId: id },

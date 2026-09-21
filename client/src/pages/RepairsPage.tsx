@@ -5,7 +5,7 @@ import { useEffect, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { http } from '../api/http';
 import { StatusTag } from '../components/StatusTag';
-import { deviceTypeOptions } from '../constants/deviceOptions';
+import { deviceLocationOptions, deviceTypeOptions } from '../constants/deviceOptions';
 import { Device, RepairRecord, User } from '../types/models';
 import { deviceStatusNames, repairStatusNames } from '../types/enums';
 import { formatDateTime, money } from '../utils/format';
@@ -131,7 +131,7 @@ export function RepairsPage() {
 
   const openConfirm = (row: RepairRecord) => {
     setConfirming(row);
-    confirmForm.setFieldsValue({ status: 'FIXED', result: row.result });
+    confirmForm.setFieldsValue({ status: 'FIXED', result: row.result, location: row.device.location });
   };
 
   const columns: ColumnsType<RepairRecord> = [
@@ -282,6 +282,14 @@ export function RepairsPage() {
                 { label: '确认已修复，恢复可用', value: 'FIXED' },
                 { label: '确认无法修复，设备报废', value: 'UNREPAIRABLE' },
               ]}
+            />
+          </Form.Item>
+          <Form.Item name="location" label="存放位置" rules={[{ required: true, message: '请选择存放位置' }]}>
+            <Select
+              showSearch
+              placeholder="选择验收后的存放位置"
+              optionFilterProp="label"
+              options={deviceLocationOptions}
             />
           </Form.Item>
           <Form.Item name="result" label="验收说明">

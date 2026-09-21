@@ -18,7 +18,7 @@ import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import { buildDeviceGroupKey } from '../devices/devices.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { SettingsService } from '../settings/settings.service';
-import { ApprovalDto, BorrowQueryDto, CreateBorrowRequestDto, ReturnBorrowDto, SupplementDto } from './dto';
+import { ApprovalDto, BorrowQueryDto, CreateBorrowRequestDto, PickupBorrowDto, ReturnBorrowDto, ReturnBorrowItemDto, SupplementDto } from './dto';
 
 @Injectable()
 export class BorrowRequestsService {
@@ -33,7 +33,7 @@ export class BorrowRequestsService {
 
     const where: Prisma.BorrowRequestWhereInput = {
       status: query.status,
-      deviceId: query.deviceId,
+      items: query.deviceId ? { some: { deviceId: query.deviceId } } : undefined,
       applicantId: query.applicantId,
       departmentId: query.departmentId,
     };
@@ -56,7 +56,10 @@ export class BorrowRequestsService {
       where,
       orderBy: { createdAt: 'desc' },
       include: {
-        device: true,
+        items: {
+          orderBy: { createdAt: 'asc' },
+          include: { device: true },
+        },
         applicant: { select: { id: true, name: true, username: true } },
         department: true,
         approvals: {
@@ -71,7 +74,10 @@ export class BorrowRequestsService {
     const request = await this.prisma.borrowRequest.findUnique({
       where: { id },
       include: {
-        device: true,
+        items: {
+          orderBy: { createdAt: 'asc' },
+          include: { device: true },
+        },
         applicant: { select: { id: true, name: true, username: true, departmentId: true } },
         department: true,
         approvals: {
@@ -88,6 +94,25 @@ export class BorrowRequestsService {
     return request;
   }
 
+  async availableDevicesForPickup(id: string, location: string | undefined, user: RequestUser) {
+    const request = await this.prisma.borrowRequest.findUnique({
+      where: { id },
+      include: { items: true },
+    });
+    if (!request) {
+      throw new NotFoundException('借用申请不存在');
+    }
+    this.assertCanRead(request.applicantId, request.departmentId, user);
+    if (request.status !== BorrowStatus.APPROVED) {
+      throw new BadRequestException('只有审批通过的申请可以分配设备');
+    }
+    if (request.items.length) {
+      throw new BadRequestException('该申请已分配设备');
+    }
+
+    return this.findAssignableDevices(request, location);
+  }
+
   async cancel(id: string, user: RequestUser) {
     const request = await this.prisma.borrowRequest.findUnique({ where: { id } });
     if (!request) throw new NotFoundException('借用申请不存在');
@@ -102,26 +127,9 @@ export class BorrowRequestsService {
       throw new BadRequestException('当前状态不允许取消');
     }
 
-    const updated = await this.prisma.$transaction(async (tx) => {
-      const borrow = await tx.borrowRequest.update({
-        where: { id },
-        data: { status: BorrowStatus.CANCELLED },
-      });
-
-      if ((activeBorrowStatuses as string[]).includes(request.status)) {
-        const activeForDevice = await tx.borrowRequest.findFirst({
-          where: {
-            id: { not: id },
-            deviceId: request.deviceId,
-            status: { in: activeBorrowStatuses },
-          },
-        });
-        if (!activeForDevice) {
-          await tx.device.update({ where: { id: request.deviceId }, data: { status: DeviceStatus.AVAILABLE } });
-        }
-      }
-
-      return borrow;
+    const updated = await this.prisma.borrowRequest.update({
+      where: { id },
+      data: { status: BorrowStatus.CANCELLED },
     });
 
     await this.auditLogs.record({
@@ -140,7 +148,9 @@ export class BorrowRequestsService {
     if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) {
       throw new BadRequestException('借用时间格式不正确');
     }
-    if (start < new Date()) {
+    const todayStart = new Date();
+    todayStart.setHours(0, 0, 0, 0);
+    if (start < todayStart) {
       throw new BadRequestException('借用开始时间不能早于当前时间');
     }
     if (!(start < end)) {
@@ -148,47 +158,37 @@ export class BorrowRequestsService {
     }
 
     const quantity = dto.quantity || 1;
-    const devices = await this.resolveBorrowDevices(dto, quantity);
-
-    for (const device of devices) {
-      await this.assertNoTimeConflict(device.id, start, end);
-    }
+    const requestDevice = await this.resolveRequestedDevice(dto);
+    await this.assertGroupScheduleAvailability(buildDeviceGroupKey(requestDevice), quantity, start, end);
 
     const approvalRequired = await this.settingsService.getApprovalRequired();
-    const nextDeviceStatus = approvalRequired ? DeviceStatus.BORROW_PENDING : DeviceStatus.RESERVED;
     const nextBorrowStatus = approvalRequired ? BorrowStatus.PENDING_APPROVAL : BorrowStatus.APPROVED;
 
-    const created = await this.prisma.$transaction(async (tx) => {
-      const createdRequests = [];
-      for (const device of devices) {
-        await tx.device.update({ where: { id: device.id }, data: { status: nextDeviceStatus } });
-        const request = await tx.borrowRequest.create({
-          data: {
-            deviceId: device.id,
-            applicantId: user.id,
-            departmentId: user.departmentId,
-            borrowStartAt: start,
-            borrowEndAt: end,
-            purpose: dto.purpose,
-            remark: dto.remark,
-            attachmentNames: dto.attachmentNames,
-            status: nextBorrowStatus,
-            approvalRequired,
-          },
-          include: { device: true },
-        });
-        createdRequests.push(request);
-      }
-      return createdRequests;
+    const created = await this.prisma.borrowRequest.create({
+      data: {
+        requestedName: requestDevice.name,
+        requestedType: requestDevice.type,
+        requestedBrand: requestDevice.brand,
+        requestedModel: requestDevice.model,
+        quantity,
+        applicantId: user.id,
+        departmentId: user.departmentId,
+        borrowStartAt: start,
+        borrowEndAt: end,
+        purpose: dto.purpose,
+        remark: dto.remark,
+        attachmentNames: dto.attachmentNames,
+        status: nextBorrowStatus,
+        approvalRequired,
+      },
     });
 
     await this.auditLogs.record({
       actorId: user.id,
       action: 'CREATE_BORROW_REQUEST',
       targetType: 'BORROW_REQUEST',
-      targetId: created[0]?.id,
+      targetId: created.id,
       detail: {
-        deviceIds: devices.map((device) => device.id),
         deviceGroupKey: dto.deviceGroupKey,
         quantity,
         borrowStartAt: start,
@@ -196,7 +196,7 @@ export class BorrowRequestsService {
       },
     });
 
-    return quantity === 1 ? created[0] : created;
+    return created;
   }
 
   async supplement(id: string, dto: SupplementDto, user: RequestUser) {
@@ -232,13 +232,10 @@ export class BorrowRequestsService {
     if (request.status !== BorrowStatus.PENDING_APPROVAL) {
       throw new BadRequestException('只有待审批申请可以审批通过');
     }
-    await this.assertNoTimeConflict(request.deviceId, request.borrowStartAt, request.borrowEndAt, id);
-
     const updated = await this.prisma.$transaction(async (tx) => {
       await tx.borrowApproval.create({
         data: { borrowRequestId: id, approverId: user.id, result: 'APPROVED', comment: dto.comment },
       });
-      await tx.device.update({ where: { id: request.deviceId }, data: { status: DeviceStatus.RESERVED } });
       return tx.borrowRequest.update({ where: { id }, data: { status: BorrowStatus.APPROVED } });
     });
 
@@ -261,18 +258,7 @@ export class BorrowRequestsService {
       await tx.borrowApproval.create({
         data: { borrowRequestId: id, approverId: user.id, result: 'REJECTED', comment: dto.comment },
       });
-      const borrow = await tx.borrowRequest.update({ where: { id }, data: { status: BorrowStatus.REJECTED } });
-      const activeForDevice = await tx.borrowRequest.findFirst({
-        where: {
-          id: { not: id },
-          deviceId: request.deviceId,
-          status: { in: activeBorrowStatuses },
-        },
-      });
-      if (!activeForDevice) {
-        await tx.device.update({ where: { id: request.deviceId }, data: { status: DeviceStatus.AVAILABLE } });
-      }
-      return borrow;
+      return tx.borrowRequest.update({ where: { id }, data: { status: BorrowStatus.REJECTED } });
     });
     await this.auditLogs.record({
       actorId: user.id,
@@ -305,14 +291,35 @@ export class BorrowRequestsService {
     return updated;
   }
 
-  async pickup(id: string, user: RequestUser) {
-    const request = await this.prisma.borrowRequest.findUnique({ where: { id }, include: { device: true } });
+  async pickup(id: string, dto: PickupBorrowDto, user: RequestUser) {
+    const request = await this.prisma.borrowRequest.findUnique({
+      where: { id },
+      include: { items: { include: { device: true } } },
+    });
     if (!request) throw new NotFoundException('借用申请不存在');
     if (request.status !== BorrowStatus.APPROVED) throw new BadRequestException('只有审批通过的申请可以领取');
-    if (request.device.status === DeviceStatus.REPAIRING) throw new BadRequestException('设备维修中，不能领取');
+    if (request.items.length) throw new BadRequestException('该申请已分配设备，不能重复领取');
+
+    const devices = dto.deviceIds?.length
+      ? await this.resolveSelectedDevices(request, dto.deviceIds)
+      : await this.resolveGroupDevices(buildRequestGroupKey(request), request.quantity, dto.preferredLocation);
+
+    for (const device of devices) {
+      await this.assertNoTimeConflict(device.id, request.borrowStartAt, request.borrowEndAt, id);
+    }
 
     const updated = await this.prisma.$transaction(async (tx) => {
-      await tx.device.update({ where: { id: request.deviceId }, data: { status: DeviceStatus.BORROWED } });
+      for (const device of devices) {
+        await tx.device.update({ where: { id: device.id }, data: { status: DeviceStatus.BORROWED } });
+        await tx.borrowItem.create({
+          data: {
+            borrowRequestId: id,
+            deviceId: device.id,
+            status: BorrowStatus.PICKED_UP,
+            pickedUpAt: new Date(),
+          },
+        });
+      }
       return tx.borrowRequest.update({
         where: { id },
         data: { status: BorrowStatus.PICKED_UP, pickedUpAt: new Date() },
@@ -328,54 +335,70 @@ export class BorrowRequestsService {
   }
 
   async returnDevice(id: string, dto: ReturnBorrowDto, user: RequestUser) {
-    const request = await this.prisma.borrowRequest.findUnique({ where: { id }, include: { device: true } });
+    const request = await this.prisma.borrowRequest.findUnique({
+      where: { id },
+      include: { items: { include: { device: true } } },
+    });
     if (!request) throw new NotFoundException('借用申请不存在');
     if (!([BorrowStatus.PICKED_UP, BorrowStatus.OVERDUE] as string[]).includes(request.status)) {
       throw new BadRequestException('只有已领取或逾期申请可以登记归还');
     }
+    if (!request.items.length) {
+      throw new BadRequestException('该申请还没有交付设备，不能登记归还');
+    }
 
     const now = new Date();
-    const abnormal = dto.returnCondition !== ReturnCondition.NORMAL;
-    const reportRepair = dto.reportRepair ?? abnormal;
-    const returnLocation = dto.returnLocation || request.device.location;
+    const returnItems = this.normalizeReturnItems(request.items, dto);
     const updated = await this.prisma.$transaction(async (tx) => {
       const borrow = await tx.borrowRequest.update({
         where: { id },
         data: {
           status: BorrowStatus.RETURNED,
           returnedAt: now,
-          returnCondition: dto.returnCondition,
-          returnRemark: dto.returnRemark,
-          returnLocation,
+          returnCondition: returnItems.some((item) => item.returnCondition !== ReturnCondition.NORMAL) ? ReturnCondition.ABNORMAL : ReturnCondition.NORMAL,
+          returnRemark: dto.returnRemark || summarizeReturnRemarks(returnItems),
+          returnLocation: dto.returnLocation || summarizeReturnLocations(returnItems),
         },
       });
 
-      if (reportRepair) {
-        await tx.device.update({
-          where: { id: request.deviceId },
-          data: { status: DeviceStatus.REPAIRING, location: returnLocation },
-        });
-        await tx.repairRecord.create({
+      for (const item of returnItems) {
+        await tx.borrowItem.update({
+          where: { id: item.itemId },
           data: {
-            deviceId: request.deviceId,
-            borrowRequestId: id,
-            faultDescription: dto.repairDescription || dto.returnRemark,
-            status: RepairStatus.WAITING_ACCEPT,
+            status: BorrowStatus.RETURNED,
+            returnedAt: now,
+            returnCondition: item.returnCondition,
+            returnRemark: item.returnRemark,
+            returnLocation: item.returnLocation,
           },
         });
-      } else {
+        if (item.reportRepair) {
+          await tx.device.update({
+            where: { id: item.deviceId },
+            data: { status: DeviceStatus.REPAIRING, location: item.returnLocation },
+          });
+          await tx.repairRecord.create({
+            data: {
+              deviceId: item.deviceId,
+              borrowRequestId: id,
+              faultDescription: item.repairDescription || item.returnRemark,
+              status: RepairStatus.WAITING_ACCEPT,
+            },
+          });
+          continue;
+        }
         const futureApproved = await tx.borrowRequest.findFirst({
           where: {
             id: { not: id },
-            deviceId: request.deviceId,
             status: BorrowStatus.APPROVED,
             borrowEndAt: { gt: now },
+            items: { some: { deviceId: item.deviceId } },
           },
         });
         const nextStatus = futureApproved ? DeviceStatus.RESERVED : DeviceStatus.AVAILABLE;
         await tx.device.update({
-          where: { id: request.deviceId },
-          data: { status: nextStatus, location: returnLocation },
+          where: { id: item.deviceId },
+          data: { status: nextStatus, location: item.returnLocation },
         });
       }
 
@@ -384,7 +407,7 @@ export class BorrowRequestsService {
 
     await this.auditLogs.record({
       actorId: user.id,
-      action: abnormal ? 'RETURN_DEVICE_ABNORMAL' : 'RETURN_DEVICE_NORMAL',
+      action: returnItems.some((item) => item.returnCondition !== ReturnCondition.NORMAL) ? 'RETURN_DEVICE_ABNORMAL' : 'RETURN_DEVICE_NORMAL',
       targetType: 'BORROW_REQUEST',
       targetId: id,
       detail: dto,
@@ -414,53 +437,205 @@ export class BorrowRequestsService {
     throw new ForbiddenException('无权查看该申请');
   }
 
-  private async resolveBorrowDevices(dto: CreateBorrowRequestDto, quantity: number) {
+  private async resolveRequestedDevice(dto: CreateBorrowRequestDto) {
     if (dto.deviceId) {
       const device = await this.prisma.device.findUnique({ where: { id: dto.deviceId } });
       if (!device) {
         throw new NotFoundException('设备不存在');
       }
-      if (device.status !== DeviceStatus.AVAILABLE) {
+      if (([DeviceStatus.DISABLED, DeviceStatus.SCRAPPED, DeviceStatus.REPAIRING] as string[]).includes(device.status)) {
         throw new BadRequestException('该设备当前不可申请借用');
       }
-      if (quantity > 1) {
-        const groupKey = buildDeviceGroupKey(device);
-        return this.resolveGroupDevices(groupKey, quantity);
-      }
-      return [device];
+      return device;
     }
 
     if (!dto.deviceGroupKey) {
       throw new BadRequestException('请选择借用设备');
     }
-    return this.resolveGroupDevices(dto.deviceGroupKey, quantity);
+    const devices = await this.prisma.device.findMany({
+      where: {
+        deletedAt: null,
+        status: { notIn: [DeviceStatus.DISABLED, DeviceStatus.SCRAPPED, DeviceStatus.REPAIRING] },
+      },
+      orderBy: { createdAt: 'asc' },
+    });
+    const device = devices.find((item) => buildDeviceGroupKey(item) === dto.deviceGroupKey);
+    if (!device) {
+      throw new BadRequestException('该型号暂无可申请设备');
+    }
+    return device;
   }
 
-  private async resolveGroupDevices(groupKey: string, quantity: number) {
+  private async resolveGroupDevices(groupKey: string, quantity: number, preferredLocation?: string) {
     const devices = await this.prisma.device.findMany({
       where: { deletedAt: null, status: DeviceStatus.AVAILABLE },
       orderBy: { createdAt: 'asc' },
     });
-    const matched = devices.filter((device) => buildDeviceGroupKey(device) === groupKey).slice(0, quantity);
+    const sameGroup = devices.filter((device) => buildDeviceGroupKey(device) === groupKey);
+    const sorted = preferredLocation
+      ? [
+          ...sameGroup.filter((device) => device.location === preferredLocation),
+          ...sameGroup.filter((device) => device.location !== preferredLocation),
+        ]
+      : sameGroup;
+    const matched = sorted.slice(0, quantity);
     if (matched.length < quantity) {
       throw new BadRequestException(`该型号当前可用库存不足 ${quantity} 台`);
     }
     return matched;
   }
 
-  private async assertNoTimeConflict(deviceId: string, start: Date, end: Date, excludeId?: string) {
-    const conflict = await this.prisma.borrowRequest.findFirst({
+  private async assertGroupAvailability(groupKey: string, quantity: number) {
+    await this.resolveGroupDevices(groupKey, quantity);
+  }
+
+  private async assertGroupScheduleAvailability(groupKey: string, quantity: number, start: Date, end: Date) {
+    const devices = await this.prisma.device.findMany({
       where: {
-        id: excludeId ? { not: excludeId } : undefined,
-        deviceId,
+        deletedAt: null,
+        status: { notIn: [DeviceStatus.DISABLED, DeviceStatus.SCRAPPED, DeviceStatus.REPAIRING] },
+      },
+    });
+    const total = devices.filter((device) => buildDeviceGroupKey(device) === groupKey).length;
+    const occupied = await this.countOccupiedQuantity(groupKey, start, end);
+    const available = Math.max(0, total - occupied);
+    if (available < quantity) {
+      throw new BadRequestException(`该型号在所选时间段已被占用，可用 ${available} 台，无法申请 ${quantity} 台`);
+    }
+  }
+
+  private async countOccupiedQuantity(groupKey: string, start: Date, end: Date) {
+    const requests = await this.prisma.borrowRequest.findMany({
+      where: {
         status: { in: activeBorrowStatuses },
         borrowStartAt: { lt: end },
         borrowEndAt: { gt: start },
       },
+      select: {
+        requestedType: true,
+        requestedBrand: true,
+        requestedModel: true,
+        quantity: true,
+      },
     });
+    return requests
+      .filter((request) => buildRequestGroupKey(request) === groupKey)
+      .reduce((sum, request) => sum + request.quantity, 0);
+  }
+
+  private async resolveSelectedDevices(
+    request: { requestedType: string; requestedBrand: string | null; requestedModel: string | null; quantity: number },
+    deviceIds: string[],
+  ) {
+    if (deviceIds.length !== request.quantity) {
+      throw new BadRequestException(`请选择 ${request.quantity} 台设备`);
+    }
+    if (new Set(deviceIds).size !== deviceIds.length) {
+      throw new BadRequestException('不能重复选择同一台设备');
+    }
+
+    const devices = await this.prisma.device.findMany({
+      where: { id: { in: deviceIds }, deletedAt: null },
+      orderBy: { createdAt: 'asc' },
+    });
+    if (devices.length !== deviceIds.length) {
+      throw new BadRequestException('选择的设备不存在或已删除');
+    }
+    const groupKey = buildRequestGroupKey(request);
+    const invalid = devices.find((device) => buildDeviceGroupKey(device) !== groupKey);
+    if (invalid) {
+      throw new BadRequestException('选择的设备与申请型号不一致');
+    }
+    const unavailable = devices.find((device) => device.status !== DeviceStatus.AVAILABLE);
+    if (unavailable) {
+      throw new BadRequestException(`${unavailable.name}（${unavailable.code}）当前不可交付`);
+    }
+    return devices;
+  }
+
+  private async findAssignableDevices(
+    request: { id: string; requestedType: string; requestedBrand: string | null; requestedModel: string | null; borrowStartAt: Date; borrowEndAt: Date },
+    location?: string,
+  ) {
+    const groupKey = buildRequestGroupKey(request);
+    const devices = await this.prisma.device.findMany({
+      where: {
+        deletedAt: null,
+        status: DeviceStatus.AVAILABLE,
+        location: location || undefined,
+      },
+      orderBy: [{ location: 'asc' }, { createdAt: 'asc' }],
+    });
+
+    const matched = devices.filter((device) => buildDeviceGroupKey(device) === groupKey);
+    const availability = await Promise.all(
+      matched.map(async (device) => ({
+        device,
+        hasConflict: await this.hasTimeConflict(device.id, request.borrowStartAt, request.borrowEndAt, request.id),
+      })),
+    );
+    return availability.filter((item) => !item.hasConflict).map((item) => item.device);
+  }
+
+  private normalizeReturnItems(
+    items: Array<{ id: string; deviceId: string; device: { location: string } }>,
+    dto: ReturnBorrowDto,
+  ) {
+    const knownDeviceIds = new Set(items.map((item) => item.deviceId));
+    const providedDeviceIds = (dto.items || []).map((item) => item.deviceId);
+    if (new Set(providedDeviceIds).size !== providedDeviceIds.length) {
+      throw new BadRequestException('归还明细不能重复选择同一台设备');
+    }
+    const unknownDeviceId = providedDeviceIds.find((deviceId) => !knownDeviceIds.has(deviceId));
+    if (unknownDeviceId) {
+      throw new BadRequestException('归还明细包含不属于该申请的设备');
+    }
+
+    const providedMap = new Map((dto.items || []).map((item) => [item.deviceId, item]));
+    return items.map((item) => {
+      const provided = providedMap.get(item.deviceId);
+      if (!provided && (!dto.returnCondition || !dto.returnRemark)) {
+        throw new BadRequestException('请填写每台设备的归还状态和备注');
+      }
+      const payload: ReturnBorrowItemDto = provided || {
+        deviceId: item.deviceId,
+        returnCondition: dto.returnCondition as string,
+        returnRemark: dto.returnRemark as string,
+        returnLocation: dto.returnLocation,
+        reportRepair: dto.reportRepair,
+        repairDescription: dto.repairDescription,
+      };
+      const abnormal = payload.returnCondition !== ReturnCondition.NORMAL;
+      return {
+        itemId: item.id,
+        deviceId: item.deviceId,
+        returnCondition: payload.returnCondition,
+        returnRemark: payload.returnRemark,
+        returnLocation: payload.returnLocation || item.device.location,
+        reportRepair: payload.reportRepair ?? abnormal,
+        repairDescription: payload.repairDescription,
+      };
+    });
+  }
+
+  private async assertNoTimeConflict(deviceId: string, start: Date, end: Date, excludeId?: string) {
+    const conflict = await this.hasTimeConflict(deviceId, start, end, excludeId);
     if (conflict) {
       throw new BadRequestException('该设备在所选时间段已被预约或借出');
     }
+  }
+
+  private async hasTimeConflict(deviceId: string, start: Date, end: Date, excludeId?: string) {
+    const conflict = await this.prisma.borrowRequest.findFirst({
+      where: {
+        id: excludeId ? { not: excludeId } : undefined,
+        status: { in: activeBorrowStatuses },
+        borrowStartAt: { lt: end },
+        borrowEndAt: { gt: start },
+        items: { some: { deviceId } },
+      },
+    });
+    return Boolean(conflict);
   }
 
   private async refreshOverdueStatuses() {
@@ -472,4 +647,16 @@ export class BorrowRequestsService {
       data: { status: BorrowStatus.OVERDUE },
     });
   }
+}
+
+function buildRequestGroupKey(request: { requestedType: string; requestedBrand?: string | null; requestedModel?: string | null }) {
+  return [request.requestedType, request.requestedBrand || '', request.requestedModel || ''].join('::');
+}
+
+function summarizeReturnRemarks(items: Array<{ deviceId: string; returnRemark: string }>) {
+  return items.map((item) => `${item.deviceId}: ${item.returnRemark}`).join('；');
+}
+
+function summarizeReturnLocations(items: Array<{ returnLocation: string }>) {
+  return Array.from(new Set(items.map((item) => item.returnLocation).filter(Boolean))).join('、') || undefined;
 }

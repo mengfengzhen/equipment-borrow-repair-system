@@ -1,7 +1,7 @@
 import axios from 'axios';
 
 const defaultApiBaseUrl =
-  window.location.port === '5173' ? 'http://localhost:3000/api' : '/api';
+  window.location.port === '5173' ? `http://${window.location.hostname}:3000/api` : '/api';
 
 export const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || defaultApiBaseUrl;
 

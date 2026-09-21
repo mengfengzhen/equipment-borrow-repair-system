@@ -5,7 +5,7 @@ import { Roles } from '../common/constants';
 import { CurrentUser, RequestUser } from '../common/current-user.decorator';
 import { RequireRoles } from '../common/roles.decorator';
 import { RolesGuard } from '../common/roles.guard';
-import { ApprovalDto, BorrowQueryDto, CreateBorrowRequestDto, ReturnBorrowDto, SupplementDto } from './dto';
+import { ApprovalDto, BorrowQueryDto, CreateBorrowRequestDto, PickupBorrowDto, ReturnBorrowDto, SupplementDto } from './dto';
 import { BorrowRequestsService } from './borrow-requests.service';
 
 @ApiTags('borrow-requests')
@@ -18,6 +18,12 @@ export class BorrowRequestsController {
   @Get()
   list(@Query() query: BorrowQueryDto, @CurrentUser() user: RequestUser) {
     return this.service.list(query, user);
+  }
+
+  @Get(':id/available-devices')
+  @RequireRoles(Roles.ADMIN)
+  availableDevices(@Param('id') id: string, @Query('location') location: string | undefined, @CurrentUser() user: RequestUser) {
+    return this.service.availableDevicesForPickup(id, location, user);
   }
 
   @Get(':id')
@@ -63,8 +69,8 @@ export class BorrowRequestsController {
 
   @Patch(':id/pickup')
   @RequireRoles(Roles.ADMIN)
-  pickup(@Param('id') id: string, @CurrentUser() user: RequestUser) {
-    return this.service.pickup(id, user);
+  pickup(@Param('id') id: string, @Body() dto: PickupBorrowDto, @CurrentUser() user: RequestUser) {
+    return this.service.pickup(id, dto, user);
   }
 
   @Patch(':id/return')

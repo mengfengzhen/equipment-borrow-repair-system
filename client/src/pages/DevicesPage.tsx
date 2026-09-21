@@ -1,5 +1,5 @@
 import { DeleteOutlined, EditOutlined, EyeOutlined, PlusOutlined, UploadOutlined } from '@ant-design/icons';
-import { Button, DatePicker, Descriptions, Drawer, Form, Input, InputNumber, Modal, Popconfirm, Select, Space, Table, Typography, Upload, message } from 'antd';
+import { Alert, Button, DatePicker, Descriptions, Drawer, Form, Input, InputNumber, Modal, Popconfirm, Select, Space, Table, Typography, Upload, message } from 'antd';
 import { ColumnsType } from 'antd/es/table';
 import type { UploadFile } from 'antd/es/upload/interface';
 import dayjs from 'dayjs';
@@ -10,14 +10,11 @@ import { StatusTag } from '../components/StatusTag';
 import { deviceBrandOptions, deviceLocationOptions, deviceModelOptions, deviceTypeOptions } from '../constants/deviceOptions';
 import { deviceStatusNames } from '../types/enums';
 import { BorrowRequest, Device, User } from '../types/models';
-import { money } from '../utils/format';
-import { formatDateTime } from '../utils/format';
+import { formatDateRange, formatDateTime, money } from '../utils/format';
 import { serializeAttachments, uploadFiles } from '../utils/upload';
 
 const activeBorrowStatuses = ['PENDING_APPROVAL', 'NEED_MORE_INFO', 'APPROVED', 'PICKED_UP', 'OVERDUE'];
 const deviceStatusOptions = Object.entries(deviceStatusNames).map(([value, label]) => ({ value, label }));
-const defaultBorrowDurationHours = 2;
-
 type DeviceHistory = {
   borrows: BorrowRequest[];
   repairs: Array<{ id: string; status: string; faultDescription: string; repairStartAt: string; repairer?: { name: string } }>;
@@ -108,8 +105,10 @@ export function DevicesPage() {
   };
 
   const activeBorrowByDevice = borrowRequests.reduce<Record<string, BorrowRequest>>((acc, request) => {
-    if (activeBorrowStatuses.includes(request.status) && request.device?.id) {
-      acc[request.device.id] = request;
+    if (activeBorrowStatuses.includes(request.status)) {
+      (request.items || []).forEach((item) => {
+        acc[item.device.id] = request;
+      });
     }
     return acc;
   }, {});
@@ -122,54 +121,50 @@ export function DevicesPage() {
     if (!value?.[0] || !value?.[1]) {
       return Promise.resolve();
     }
-    const now = dayjs();
-    const startLooksLikeDateOnlyToday =
-      value[0].isSame(now, 'day') && value[0].hour() === 0 && value[0].minute() === 0 && value[0].second() === 0;
 
-    if (value[0].isBefore(now) && !startLooksLikeDateOnlyToday) {
-      return Promise.reject(new Error('借用开始时间不能早于当前时间'));
-    }
-    if (!value[0].isBefore(value[1]) && !startLooksLikeDateOnlyToday) {
-      return Promise.reject(new Error('归还时间必须晚于借用开始时间'));
+    if (value[1].isBefore(value[0], 'day')) {
+      return Promise.reject(new Error('归还日期不能早于借用开始日期'));
     }
     return Promise.resolve();
   };
 
-  const getBorrowTimeDefaults = () => {
-    const start = dayjs().add(5, 'minute').second(0);
-    return [start, start.add(defaultBorrowDurationHours, 'hour')] as [dayjs.Dayjs, dayjs.Dayjs];
+  const getBorrowDateDefaults = () => {
+    const today = dayjs().startOf('day');
+    return [today, today] as [dayjs.Dayjs, dayjs.Dayjs];
   };
 
   const normalizeBorrowRange = (range: [dayjs.Dayjs, dayjs.Dayjs]) => {
-    const now = dayjs();
-    let start = range[0];
-    let end = range[1];
-
-    if (start.isBefore(now)) {
-      start = now.add(5, 'minute').second(0);
-    }
-    if (!end.isAfter(start)) {
-      end = start.add(defaultBorrowDurationHours, 'hour');
-    }
-
-    return [start, end] as [dayjs.Dayjs, dayjs.Dayjs];
+    return [range[0].startOf('day'), range[1].endOf('day')] as [dayjs.Dayjs, dayjs.Dayjs];
   };
 
-  const disabledBorrowTime = (current: dayjs.Dayjs | null) => {
-    const now = dayjs();
-    if (!current || !current.isSame(now, 'day')) {
-      return {};
-    }
+  const loadBorrowOptionsForRange = async (range?: [dayjs.Dayjs, dayjs.Dayjs]) => {
+    if (!canApplyBorrow) return;
+    try {
+      const params = new URLSearchParams();
+      if (range?.[0] && range?.[1]) {
+        const normalized = normalizeBorrowRange(range);
+        params.set('borrowStartAt', normalized[0].toISOString());
+        params.set('borrowEndAt', normalized[1].toISOString());
+      }
+      const result = await http.get(`/devices/borrow-options${params.toString() ? `?${params.toString()}` : ''}`);
+      const options = result as unknown as BorrowOption[];
+      setBorrowOptions(options);
 
-    return {
-      disabledHours: () => Array.from({ length: now.hour() }, (_, index) => index),
-      disabledMinutes: (selectedHour: number) =>
-        selectedHour === now.hour() ? Array.from({ length: now.minute() }, (_, index) => index) : [],
-      disabledSeconds: (selectedHour: number, selectedMinute: number) =>
-        selectedHour === now.hour() && selectedMinute === now.minute()
-          ? Array.from({ length: now.second() }, (_, index) => index)
-          : [],
-    };
+      const selectedGroupKey = borrowForm.getFieldValue('deviceGroupKey');
+      const selectedOption = options.find((item) => item.groupKey === selectedGroupKey);
+      const quantity = Number(borrowForm.getFieldValue('quantity') || 1);
+      if (selectedGroupKey && (!selectedOption || selectedOption.availableCount <= 0)) {
+        setSelectedBorrowOptionKey(undefined);
+        borrowForm.setFieldsValue({ deviceGroupKey: undefined, quantity: 1 });
+        message.warning('当前时间段下原选择的型号已不可用，请重新选择。');
+        return;
+      }
+      if (selectedOption && selectedOption.availableCount > 0 && quantity > selectedOption.availableCount) {
+        borrowForm.setFieldsValue({ quantity: selectedOption.availableCount });
+      }
+    } catch (error) {
+      message.error((error as Error).message);
+    }
   };
 
   const submitDevice = async (values: Record<string, unknown>) => {
@@ -237,18 +232,25 @@ export function DevicesPage() {
   };
 
   const openBorrowModal = () => {
+    const defaultRange = getBorrowDateDefaults();
     setBorrowOpen(true);
     setSelectedBorrowOptionKey(undefined);
     borrowForm.resetFields();
-    borrowForm.setFieldsValue({ borrowRange: getBorrowTimeDefaults(), quantity: 1 });
+    borrowForm.setFieldsValue({ borrowRange: defaultRange, quantity: 1 });
+    void loadBorrowOptionsForRange(defaultRange);
   };
 
   const submitBorrow = async (values: Record<string, string | UploadFile[]>) => {
     try {
       const range = normalizeBorrowRange(values.borrowRange as unknown as [dayjs.Dayjs, dayjs.Dayjs]);
+      const selectedOption = borrowOptions.find((item) => item.groupKey === values.deviceGroupKey);
       const attachments = (values.attachments as UploadFile[] | undefined) || [];
-      const uploadedFiles = await uploadFiles(attachments);
       const quantity = Number(values.quantity || 1);
+      if (selectedOption && selectedOption.availableCount < quantity) {
+        message.error(`该型号在所选时间段可用 ${selectedOption.availableCount} 台，不能申请 ${quantity} 台`);
+        return;
+      }
+      const uploadedFiles = await uploadFiles(attachments);
       await http.post('/borrow-requests', {
         deviceGroupKey: values.deviceGroupKey,
         quantity,
@@ -317,7 +319,11 @@ export function DevicesPage() {
                     type="primary"
                     onClick={() => {
                       setRepairConfirmDevice(row);
-                      repairConfirmForm.setFieldsValue({ status: 'FIXED', result: row.currentRepair?.result });
+                      repairConfirmForm.setFieldsValue({
+                        status: 'FIXED',
+                        result: row.currentRepair?.result,
+                        location: row.location,
+                      });
                     }}
                   >
                     验收确认
@@ -517,6 +523,14 @@ export function DevicesPage() {
               ]}
             />
           </Form.Item>
+          <Form.Item name="location" label="存放位置" rules={[{ required: true, message: '请选择存放位置' }]}>
+            <Select
+              showSearch
+              placeholder="选择验收后的存放位置"
+              optionFilterProp="label"
+              options={deviceLocationOptions}
+            />
+          </Form.Item>
           <Form.Item name="result" label="验收说明">
             <Input.TextArea rows={3} placeholder="可补充验收意见，不填写则保留维修人员结果" />
           </Form.Item>
@@ -554,7 +568,7 @@ export function DevicesPage() {
               pagination={{ pageSize: 5 }}
               columns={[
                 { title: '申请人', render: (_, row) => row.applicant?.name || '-' },
-                { title: '借用时间', render: (_, row) => `${formatDateTime(row.borrowStartAt)} 至 ${formatDateTime(row.borrowEndAt)}` },
+                { title: '借用时间', render: (_, row) => formatDateRange(row.borrowStartAt, row.borrowEndAt) },
                 { title: '状态', render: (_, row) => <StatusTag value={row.status} /> },
               ]}
             />
@@ -587,39 +601,6 @@ export function DevicesPage() {
         destroyOnClose
       >
         <Form form={borrowForm} layout="vertical" onFinish={submitBorrow}>
-          <Form.Item name="deviceGroupKey" label="设备型号" rules={[{ required: true, message: '请选择设备型号' }]}>
-            <Select
-              showSearch
-              placeholder="选择可申请的设备型号"
-              optionFilterProp="label"
-              onChange={(value) => {
-                setSelectedBorrowOptionKey(value);
-                borrowForm.setFieldsValue({ quantity: 1 });
-              }}
-              options={borrowOptions.map((item) => ({
-                label: `${item.name} / ${item.type} / 可用 ${item.availableCount} 台`,
-                value: item.groupKey,
-              }))}
-            />
-          </Form.Item>
-          <Form.Item shouldUpdate={(prev, current) => prev.deviceGroupKey !== current.deviceGroupKey} noStyle>
-            {() => {
-              const option = borrowOptions.find((item) => item.groupKey === (selectedBorrowOptionKey || borrowForm.getFieldValue('deviceGroupKey')));
-              return option ? (
-                <Typography.Text type="secondary">
-                  当前可用 {option.availableCount} 台，位置：{option.locations.join('、') || '-'}
-                </Typography.Text>
-              ) : null;
-            }}
-          </Form.Item>
-          <Form.Item name="quantity" label="借用数量" rules={[{ required: true, message: '请输入借用数量' }]}>
-            <InputNumber
-              min={1}
-              max={borrowOptions.find((item) => item.groupKey === selectedBorrowOptionKey)?.availableCount || 1}
-              precision={0}
-              style={{ width: '100%' }}
-            />
-          </Form.Item>
           <Form.Item
             name="borrowRange"
             label="借用时间"
@@ -629,9 +610,60 @@ export function DevicesPage() {
             ]}
           >
             <DatePicker.RangePicker
-              showTime={{ defaultOpenValue: getBorrowTimeDefaults() }}
               disabledDate={disabledPastDate}
-              disabledTime={disabledBorrowTime}
+              onChange={(value) => {
+                if (value?.[0] && value?.[1]) {
+                  void loadBorrowOptionsForRange(value as [dayjs.Dayjs, dayjs.Dayjs]);
+                }
+              }}
+              style={{ width: '100%' }}
+            />
+          </Form.Item>
+          <Form.Item name="deviceGroupKey" label="设备型号" rules={[{ required: true, message: '请选择设备型号' }]}>
+            <Select
+              showSearch
+              placeholder="先选择借用时间，再选择可申请的设备型号"
+              optionFilterProp="label"
+              onChange={(value) => {
+                setSelectedBorrowOptionKey(value);
+                borrowForm.setFieldsValue({ quantity: 1 });
+              }}
+              options={borrowOptions.filter((item) => item.availableCount > 0).map((item) => ({
+                label: `${item.name} / ${item.type} / 所选时间可用 ${item.availableCount} 台`,
+                value: item.groupKey,
+              }))}
+              notFoundContent="所选时间段暂无可申请型号"
+            />
+          </Form.Item>
+          <Form.Item shouldUpdate={(prev, current) => (
+            prev.deviceGroupKey !== current.deviceGroupKey
+            || prev.quantity !== current.quantity
+            || prev.borrowRange !== current.borrowRange
+          )} noStyle>
+            {({ getFieldValue }) => {
+              const option = borrowOptions.find((item) => item.groupKey === (selectedBorrowOptionKey || borrowForm.getFieldValue('deviceGroupKey')));
+              const quantity = Number(getFieldValue('quantity') || 1);
+              return option ? (
+                <Space direction="vertical" size={8} style={{ width: '100%' }}>
+                  <Typography.Text type="secondary">
+                    所选时间可用 {option.availableCount} 台，位置：{option.locations.join('、') || '-'}
+                  </Typography.Text>
+                  {option.availableCount < quantity && (
+                    <Alert
+                      type="warning"
+                      showIcon
+                      message={`该型号在所选时间段已被占用，可用 ${option.availableCount} 台，请调整数量、型号或借用时间。`}
+                    />
+                  )}
+                </Space>
+              ) : null;
+            }}
+          </Form.Item>
+          <Form.Item name="quantity" label="借用数量" rules={[{ required: true, message: '请输入借用数量' }]}>
+            <InputNumber
+              min={1}
+              max={borrowOptions.find((item) => item.groupKey === selectedBorrowOptionKey)?.availableCount || 1}
+              precision={0}
               style={{ width: '100%' }}
             />
           </Form.Item>
