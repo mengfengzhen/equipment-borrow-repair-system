@@ -232,7 +232,7 @@ export function BorrowRequestsPage() {
           actions.push(<Button key="return" className="table-action-button" onClick={() => openAction('return', row)}>登记归还</Button>);
         }
 
-        return actions.length ? <Space wrap>{actions}</Space> : <Typography.Text type="secondary">{emptyActionText(user.role, row.status)}</Typography.Text>;
+        return actions.length ? <Space wrap>{actions}</Space> : <Typography.Text type="secondary">--</Typography.Text>;
       },
     },
   ];
@@ -538,46 +538,6 @@ function actionTitle(type?: Action) {
     supplement: '补充申请资料',
   };
   return type ? titles[type] : '';
-}
-
-function emptyActionText(role: string, status: string) {
-  if (role === 'ADMIN') {
-    const adminText: Record<string, string> = {
-      PENDING_APPROVAL: '待负责人审批',
-      NEED_MORE_INFO: '待申请人补充',
-      REJECTED: '已结束',
-      RETURNED: '已归还',
-      CANCELLED: '已取消',
-    };
-    return adminText[status] || '无需处理';
-  }
-
-  if (role === 'MANAGER') {
-    const managerText: Record<string, string> = {
-      NEED_MORE_INFO: '待申请人补充',
-      APPROVED: '已通过',
-      REJECTED: '已驳回',
-      PICKED_UP: '已交付',
-      RETURNED: '已归还',
-      CANCELLED: '已取消',
-      OVERDUE: '管理员跟进',
-    };
-    return managerText[status] || '无需处理';
-  }
-
-  if (role === 'USER') {
-    const userText: Record<string, string> = {
-      APPROVED: '待管理员交付',
-      PICKED_UP: '使用中',
-      RETURNED: '已归还',
-      REJECTED: '已驳回',
-      CANCELLED: '已取消',
-      OVERDUE: '请尽快归还',
-    };
-    return userText[status] || '等待处理';
-  }
-
-  return '无需处理';
 }
 
 function renderAttachments(value?: string) {

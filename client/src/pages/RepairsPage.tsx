@@ -163,7 +163,7 @@ export function RepairsPage() {
         }
 
         if (!isRepairer || ['WAITING_CONFIRM', 'FIXED', 'UNREPAIRABLE'].includes(row.status)) {
-          return <Typography.Text type="secondary">-</Typography.Text>;
+          return <Typography.Text type="secondary">--</Typography.Text>;
         }
 
         if (!row.repairer) {

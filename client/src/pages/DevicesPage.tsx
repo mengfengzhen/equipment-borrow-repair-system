@@ -375,7 +375,7 @@ export function DevicesPage() {
                 </Popconfirm>
               </>
             )}
-            {!canManageDevices && <Typography.Text type="secondary">{hasActiveBorrow ? '使用中' : '-'}</Typography.Text>}
+            {!canManageDevices && <Typography.Text type="secondary">--</Typography.Text>}
           </div>
         );
       },
