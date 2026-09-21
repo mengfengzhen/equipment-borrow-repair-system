@@ -28,11 +28,33 @@ export function UsersPage() {
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [form] = Form.useForm();
+  const [filterForm] = Form.useForm();
 
   const departmentOptions = useMemo(
     () => departments.map((department) => ({ label: department.name, value: department.id })),
     [departments],
   );
+  const filteredUsers = useMemo(() => {
+    const values = filterForm.getFieldsValue() as {
+      keyword?: string;
+      role?: string;
+      departmentId?: string;
+      active?: boolean;
+    };
+    const keyword = values.keyword?.trim().toLowerCase();
+
+    return users.filter((item) => {
+      const matchesKeyword = !keyword
+        || item.name.toLowerCase().includes(keyword)
+        || item.username.toLowerCase().includes(keyword)
+        || item.phone?.toLowerCase().includes(keyword)
+        || item.email?.toLowerCase().includes(keyword);
+      const matchesRole = !values.role || item.role === values.role;
+      const matchesDepartment = !values.departmentId || getDepartmentId(item) === values.departmentId;
+      const matchesActive = values.active === undefined || (item.active !== false) === values.active;
+      return matchesKeyword && matchesRole && matchesDepartment && matchesActive;
+    });
+  }, [users, departments, filterForm]);
 
   const loadData = async () => {
     setLoading(true);
@@ -95,10 +117,46 @@ export function UsersPage() {
       </div>
 
       <Card className="table-card">
+        <Form
+          form={filterForm}
+          className="list-filter-bar"
+          layout="inline"
+          onValuesChange={() => setUsers([...users])}
+        >
+          <Form.Item name="keyword" label="关键词">
+            <Input allowClear placeholder="姓名 / 账号 / 手机 / 邮箱" />
+          </Form.Item>
+          <Form.Item name="role" label="角色">
+            <Select allowClear placeholder="全部角色" options={roleOptions} style={{ width: 150 }} />
+          </Form.Item>
+          <Form.Item name="departmentId" label="部门">
+            <Select allowClear placeholder="全部部门" options={departmentOptions} style={{ width: 160 }} />
+          </Form.Item>
+          <Form.Item name="active" label="状态">
+            <Select
+              allowClear
+              placeholder="全部状态"
+              style={{ width: 130 }}
+              options={[
+                { label: '启用', value: true },
+                { label: '停用', value: false },
+              ]}
+            />
+          </Form.Item>
+          <Form.Item>
+            <Space>
+              <Button type="primary" onClick={() => setUsers([...users])}>查询</Button>
+              <Button onClick={() => {
+                filterForm.resetFields();
+                setUsers([...users]);
+              }}>重置</Button>
+            </Space>
+          </Form.Item>
+        </Form>
         <Table
           rowKey="id"
           loading={loading}
-          dataSource={users}
+          dataSource={filteredUsers}
           scroll={{ x: 1120 }}
           pagination={{ pageSize: 10, showSizeChanger: true, showTotal: (total) => `共 ${total} 个用户` }}
           columns={[

@@ -1,6 +1,6 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
-import { BorrowStatus, DeviceStatus, Roles } from '../common/constants';
+import { BorrowStatus, DeviceStatus, RepairStatus, Roles } from '../common/constants';
 import { RequestUser } from '../common/current-user.decorator';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import { PrismaService } from '../prisma/prisma.service';
@@ -13,7 +13,8 @@ export class DevicesService {
     private readonly auditLogs: AuditLogsService,
   ) {}
 
-  async list(query: DeviceQueryDto) {
+  async list(query: DeviceQueryDto, user: RequestUser) {
+    const onlyMyDevices = user.role === Roles.USER && query.scope !== 'inventory';
     const where: Prisma.DeviceWhereInput = {
       AND: [
         { deletedAt: null },
@@ -31,6 +32,16 @@ export class DevicesService {
         query.status ? { status: query.status } : {},
         query.brand ? { brand: query.brand } : {},
         query.location ? { location: query.location } : {},
+        onlyMyDevices
+          ? {
+              borrowRequests: {
+                some: {
+                  applicantId: user.id,
+                  status: { in: [BorrowStatus.APPROVED, BorrowStatus.PICKED_UP, BorrowStatus.OVERDUE] },
+                },
+              },
+            }
+          : {},
       ],
     };
 
@@ -45,17 +56,74 @@ export class DevicesService {
           take: 1,
           include: { applicant: { select: { id: true, name: true, username: true } } },
         },
+        repairRecords: {
+          where: { status: RepairStatus.WAITING_CONFIRM },
+          orderBy: { updatedAt: 'desc' },
+          take: 1,
+          include: { repairer: { select: { id: true, name: true, username: true } } },
+        },
       },
     });
 
     return devices.map((device) => {
       const [activeBorrow] = device.borrowRequests;
-      const { borrowRequests, ...rest } = device;
+      const [currentRepair] = device.repairRecords;
+      const { borrowRequests, repairRecords, ...rest } = device;
+      void repairRecords;
       return {
         ...rest,
         currentBorrower: activeBorrow?.applicant,
+        currentRepair,
       };
     });
+  }
+
+  async borrowOptions() {
+    const devices = await this.prisma.device.findMany({
+      where: { deletedAt: null, status: DeviceStatus.AVAILABLE },
+      orderBy: [{ type: 'asc' }, { brand: 'asc' }, { model: 'asc' }, { name: 'asc' }],
+      select: {
+        id: true,
+        name: true,
+        type: true,
+        brand: true,
+        model: true,
+        location: true,
+      },
+    });
+
+    const groups = new Map<string, {
+      groupKey: string;
+      name: string;
+      type: string;
+      brand?: string | null;
+      model?: string | null;
+      availableCount: number;
+      locations: Set<string>;
+      sampleDeviceId: string;
+    }>();
+
+    devices.forEach((device) => {
+      const groupKey = buildDeviceGroupKey(device);
+      const current = groups.get(groupKey) || {
+        groupKey,
+        name: buildDeviceGroupName(device),
+        type: device.type,
+        brand: device.brand,
+        model: device.model,
+        availableCount: 0,
+        locations: new Set<string>(),
+        sampleDeviceId: device.id,
+      };
+      current.availableCount += 1;
+      current.locations.add(device.location);
+      groups.set(groupKey, current);
+    });
+
+    return Array.from(groups.values()).map((group) => ({
+      ...group,
+      locations: Array.from(group.locations),
+    }));
   }
 
   async get(id: string) {
@@ -206,3 +274,12 @@ const deviceTypePrefixes: Record<string, string> = {
   存储设备: 'STO',
   移动设备: 'MOB',
 };
+
+export function buildDeviceGroupKey(device: { type: string; brand?: string | null; model?: string | null }) {
+  return [device.type, device.brand || '', device.model || ''].join('::');
+}
+
+function buildDeviceGroupName(device: { name: string; brand?: string | null; model?: string | null }) {
+  const modelName = [device.brand, device.model].filter(Boolean).join(' ');
+  return modelName || device.name;
+}

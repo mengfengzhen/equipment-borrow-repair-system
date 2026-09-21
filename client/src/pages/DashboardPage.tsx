@@ -3,12 +3,13 @@ import {
   ClockCircleOutlined,
   DatabaseOutlined,
   ExclamationCircleOutlined,
+  FileTextOutlined,
   LaptopOutlined,
   ToolOutlined,
   WarningOutlined,
 } from '@ant-design/icons';
 import { Alert, Button, Card, Col, List, Row, Space, Statistic, Tooltip, Typography, message } from 'antd';
-import { useEffect, useState } from 'react';
+import { type ReactNode, useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { http } from '../api/http';
 import { formatAuditAction } from '../types/enums';
@@ -72,11 +73,10 @@ export function DashboardPage() {
       { title: '逾期风险', value: data?.managerOverdueBorrows, description: '本部门超期未归还', icon: <WarningOutlined />, accent: 'red', path: '/borrows?status=OVERDUE' },
     ],
     USER: [
-      { title: '可用设备', value: data?.availableDevices, description: '当前可以申请', icon: <CheckCircleOutlined />, accent: 'green', path: '/devices?status=AVAILABLE' },
+      { title: '我的设备', value: data?.userActiveBorrows, description: '已领取或逾期未还', icon: <DatabaseOutlined />, accent: 'green', path: '/devices' },
       { title: '我的审批中', value: data?.userPendingBorrows, description: '等待部门负责人审批', icon: <ClockCircleOutlined />, accent: 'gold', path: '/borrows?status=PENDING_APPROVAL' },
       { title: '需补充', value: data?.userNeedMoreInfo, description: '需要重新提交说明', icon: <ExclamationCircleOutlined />, accent: 'cyan', path: '/borrows?status=NEED_MORE_INFO' },
       { title: '待领取', value: data?.userApprovedBorrows, description: '审批通过待领取', icon: <LaptopOutlined />, accent: 'blue', path: '/borrows?status=APPROVED' },
-      { title: '我的借用中', value: data?.userActiveBorrows, description: '已领取或逾期', icon: <DatabaseOutlined />, accent: 'orange', path: '/borrows?status=PICKED_UP' },
       { title: '逾期风险', value: data?.userOverdueBorrows, description: '我的超期未归还', icon: <WarningOutlined />, accent: 'red', path: '/borrows?status=OVERDUE' },
     ],
     REPAIRER: [
@@ -108,7 +108,7 @@ export function DashboardPage() {
       ['逾期风险', Number(data?.managerOverdueBorrows || 0)],
     ],
     USER: [
-      ['可用设备', Number(data?.availableDevices || 0)],
+      ['我的设备', Number(data?.userActiveBorrows || 0)],
       ['我的申请', Number(data?.userPendingBorrows || 0) + Number(data?.userNeedMoreInfo || 0)],
       ['待领取', Number(data?.userApprovedBorrows || 0)],
     ],
@@ -119,6 +119,20 @@ export function DashboardPage() {
     ],
   };
   const heroSummary = heroSummaryByRole[role as keyof typeof heroSummaryByRole] || heroSummaryByRole.USER;
+  const heroSummaryIconMap: Record<string, ReactNode> = {
+    可用率: <CheckCircleOutlined />,
+    待交付: <ClockCircleOutlined />,
+    风险项: <WarningOutlined />,
+    待审批: <ClockCircleOutlined />,
+    需补充: <ExclamationCircleOutlined />,
+    逾期风险: <WarningOutlined />,
+    我的设备: <LaptopOutlined />,
+    我的申请: <FileTextOutlined />,
+    待领取: <DatabaseOutlined />,
+    待维修: <ToolOutlined />,
+    维修中: <ToolOutlined />,
+    待配件: <ExclamationCircleOutlined />,
+  };
 
   const definitionsByRole = {
     ADMIN: [
@@ -137,7 +151,8 @@ export function DashboardPage() {
       ['我的审批中', '提交后等待部门负责人审批'],
       ['需补充', '申请被要求补充说明，可重新提交'],
       ['待领取', '审批通过后等待管理员确认领取'],
-      ['我的借用中', '已领取设备，归还后回到历史记录'],
+      ['我的设备', '已领取设备，归还后回到历史记录'],
+      ['逾期风险', '已超过预计归还时间的设备'],
     ],
     REPAIRER: [
       ['待维修', '还没有维修人员接收的维修单'],
@@ -149,13 +164,21 @@ export function DashboardPage() {
   const definitions = definitionsByRole[role as keyof typeof definitionsByRole] || definitionsByRole.USER;
   const definitionMap = Object.fromEntries(definitions);
   const statusCountMap = Object.fromEntries((data?.deviceStatusCounts || []).map((item) => [item.status, item.count]));
-  const statusDistribution = [
+  const inventoryStatusDistribution = [
     { label: '可用', value: Number(statusCountMap.AVAILABLE || 0), color: '#20b26b' },
     { label: '审批/待领取', value: Number(statusCountMap.BORROW_PENDING || 0) + Number(statusCountMap.RESERVED || 0), color: '#6aa2ff' },
     { label: '借出', value: Number(statusCountMap.BORROWED || 0), color: '#8b5cf6' },
     { label: '维修中', value: Number(statusCountMap.REPAIRING || 0), color: '#f97316' },
     { label: '停用/报废', value: Number(statusCountMap.DISABLED || 0) + Number(statusCountMap.SCRAPPED || 0), color: '#94a3b8' },
   ];
+  const userStatusDistribution = [
+    { label: '审批中', value: Number(data?.userPendingBorrows || 0), color: '#f59e0b' },
+    { label: '需补充', value: Number(data?.userNeedMoreInfo || 0), color: '#06b6d4' },
+    { label: '待领取', value: Number(data?.userApprovedBorrows || 0), color: '#6aa2ff' },
+    { label: '我的设备', value: Number(data?.userActiveBorrows || 0), color: '#20b26b' },
+    { label: '逾期风险', value: Number(data?.userOverdueBorrows || 0), color: '#ef4444' },
+  ];
+  const statusDistribution = role === 'USER' ? userStatusDistribution : inventoryStatusDistribution;
   const distributionTotal = statusDistribution.reduce((sum, item) => sum + item.value, 0);
   const selectedStatus = statusDistribution[selectedStatusIndex] || statusDistribution[0];
   const donutCenter = 110;
@@ -174,12 +197,11 @@ export function DashboardPage() {
       ? '/borrows?status=PENDING_APPROVAL'
       : '/borrows';
   const monthFocus = Number(data?.activeRepairs || 0) + Number(data?.waitingPickup || 0);
-  const dashboardCards = [
-    ...stats,
+  const extraDashboardCards = role === 'USER' ? [] : [
     {
       title: '待我处理',
       value: pendingWork,
-      description: role === 'REPAIRER' ? '待维修 / 维修中 / 待配件' : role === 'USER' ? '补充 / 领取 / 逾期事项' : '审批 / 领取 / 风险事项',
+      description: role === 'REPAIRER' ? '待维修 / 维修中 / 待配件' : '审批 / 领取 / 风险事项',
       icon: <ExclamationCircleOutlined />,
       accent: 'cyan',
       path: pendingWorkPath,
@@ -190,20 +212,21 @@ export function DashboardPage() {
       description: '维修任务与待领取汇总',
       icon: <WarningOutlined />,
       accent: 'red',
-      path: role === 'REPAIRER' ? '/repairs' : role === 'USER' ? '/borrows' : '/repairs',
+      path: role === 'REPAIRER' ? '/repairs' : '/repairs',
     },
   ];
+  const dashboardCards = [...stats, ...extraDashboardCards];
 
   return (
     <div className="dashboard-shell">
       <div className="hero-panel dashboard-hero">
         <div className="dashboard-hero-copy">
-          <div className="hero-kicker">设备借用与维修闭环</div>
+          <div className="hero-kicker">设备借用与维修管理</div>
           <Typography.Title level={2}>{copy.title}</Typography.Title>
           <Typography.Paragraph>{copy.subtitle}</Typography.Paragraph>
           <Space wrap className="hero-actions">
             {quickActions.map((item) => (
-              <Button key={item.path} type={item.type} onClick={() => navigate(item.path)}>
+              <Button key={`${item.label}-${item.path}`} type={item.type} onClick={() => navigate(item.path)}>
                 {item.label}
               </Button>
             ))}
@@ -211,8 +234,9 @@ export function DashboardPage() {
         </div>
         <div className="hero-summary">
           {heroSummary.map(([label, value]) => (
-            <div key={label}>
-              <span>{label}</span>
+            <div className="hero-summary-card" key={label}>
+              <span className="hero-summary-icon">{heroSummaryIconMap[String(label)] || <DatabaseOutlined />}</span>
+              <span className="hero-summary-label">{label}</span>
               <strong>{value}</strong>
             </div>
           ))}
@@ -252,9 +276,9 @@ export function DashboardPage() {
         ))}
       </Row>
       <Row gutter={[16, 16]}>
-        <Col xs={24} lg={10}>
+        <Col xs={24} lg={role === 'USER' ? 24 : 10}>
           <Card
-            title="设备状态分布"
+            title={role === 'USER' ? '我的借用状态' : '设备状态分布'}
             className="section-card status-distribution-card"
             extra={<Typography.Text type="secondary">实时</Typography.Text>}
           >
@@ -308,23 +332,25 @@ export function DashboardPage() {
             </div>
           </Card>
         </Col>
-        <Col xs={24} lg={14}>
-          <Card title="最近操作" className="section-card recent-activity-card" extra={user.role === 'ADMIN' ? <Button type="link" onClick={() => navigate('/logs')}>全部日志</Button> : null}>
-            <List
-              itemLayout="horizontal"
-              dataSource={data?.recentLogs || []}
-              pagination={{ pageSize: 4, size: 'small', hideOnSinglePage: false }}
-              renderItem={(item) => (
-                <List.Item className="activity-item">
-                  <List.Item.Meta
-                    title={`${item.actor?.name || '系统'} ${formatAuditAction(item.action)}`}
-                    description={formatDateTime(item.createdAt)}
-                  />
-                </List.Item>
-              )}
-            />
-          </Card>
-        </Col>
+        {role !== 'USER' && (
+          <Col xs={24} lg={14}>
+            <Card title="最近操作" className="section-card recent-activity-card" extra={user.role === 'ADMIN' ? <Button type="link" onClick={() => navigate('/logs')}>全部日志</Button> : null}>
+              <List
+                itemLayout="horizontal"
+                dataSource={data?.recentLogs || []}
+                pagination={{ pageSize: 4, size: 'small', hideOnSinglePage: false }}
+                renderItem={(item) => (
+                  <List.Item className="activity-item">
+                    <List.Item.Meta
+                      title={`${item.actor?.name || '系统'} ${formatAuditAction(item.action)}`}
+                      description={formatDateTime(item.createdAt)}
+                    />
+                  </List.Item>
+                )}
+              />
+            </Card>
+          </Col>
+        )}
       </Row>
     </div>
   );

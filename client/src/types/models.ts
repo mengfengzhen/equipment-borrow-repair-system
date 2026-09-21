@@ -30,6 +30,12 @@ export type Device = {
   description?: string;
   owner?: { id: string; name: string; username?: string };
   currentBorrower?: { id: string; name: string; username?: string };
+  currentRepair?: {
+    id: string;
+    status: string;
+    result?: string;
+    repairer?: { id: string; name: string; username?: string };
+  };
 };
 
 export type BorrowRequest = {

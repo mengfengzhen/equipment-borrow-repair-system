@@ -15,8 +15,10 @@ export function RepairsPage() {
   const [devices, setDevices] = useState<Device[]>([]);
   const [users, setUsers] = useState<User[]>([]);
   const [current, setCurrent] = useState<RepairRecord>();
+  const [confirming, setConfirming] = useState<RepairRecord>();
   const [createOpen, setCreateOpen] = useState(false);
   const [form] = Form.useForm();
+  const [confirmForm] = Form.useForm();
   const [createForm] = Form.useForm();
   const [filterForm] = Form.useForm();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -99,6 +101,19 @@ export function RepairsPage() {
     }
   };
 
+  const confirmRepair = async (values: Record<string, unknown>) => {
+    if (!confirming) return;
+    try {
+      await http.patch(`/repairs/${confirming.id}/confirm`, values);
+      message.success('维修验收已确认');
+      setConfirming(undefined);
+      confirmForm.resetFields();
+      load();
+    } catch (error) {
+      message.error((error as Error).message);
+    }
+  };
+
   const acceptRepair = async (row: RepairRecord) => {
     try {
       await http.patch(`/repairs/${row.id}/accept`);
@@ -114,6 +129,11 @@ export function RepairsPage() {
     form.resetFields();
   };
 
+  const openConfirm = (row: RepairRecord) => {
+    setConfirming(row);
+    confirmForm.setFieldsValue({ status: 'FIXED', result: row.result });
+  };
+
   const columns: ColumnsType<RepairRecord> = [
     { title: '设备', render: (_, row) => row.device.name },
     { title: '故障描述', dataIndex: 'faultDescription' },
@@ -125,7 +145,15 @@ export function RepairsPage() {
     {
       title: '操作',
       render: (_, row) => {
-        if (!isRepairer || ['FIXED', 'UNREPAIRABLE'].includes(row.status)) {
+        if (user.role === 'ADMIN' && row.status === 'WAITING_CONFIRM') {
+          return (
+            <Button className="table-action-button" type="primary" onClick={() => openConfirm(row)}>
+              验收确认
+            </Button>
+          );
+        }
+
+        if (!isRepairer || ['WAITING_CONFIRM', 'FIXED', 'UNREPAIRABLE'].includes(row.status)) {
           return <Typography.Text type="secondary">-</Typography.Text>;
         }
 
@@ -231,13 +259,34 @@ export function RepairsPage() {
               placeholder="请选择本次处理结果"
               options={[
                 { label: '待配件', value: 'WAITING_PARTS' },
-                { label: '已修复', value: 'FIXED' },
-                { label: '无法修复', value: 'UNREPAIRABLE' },
+                { label: '已修复，提交管理员验收', value: 'FIXED' },
+                { label: '无法修复，提交管理员确认', value: 'UNREPAIRABLE' },
               ]}
             />
           </Form.Item>
           <Form.Item name="result" label="维修结果"><Input.TextArea rows={3} /></Form.Item>
           <Form.Item name="cost" label="维修费用"><InputNumber style={{ width: '100%' }} /></Form.Item>
+        </Form>
+      </Modal>
+      <Modal
+        title="维修验收确认"
+        open={Boolean(confirming)}
+        onCancel={() => setConfirming(undefined)}
+        onOk={() => confirmForm.submit()}
+        destroyOnClose
+      >
+        <Form form={confirmForm} layout="vertical" onFinish={confirmRepair}>
+          <Form.Item name="status" label="验收结果" rules={[{ required: true, message: '请选择验收结果' }]}>
+            <Select
+              options={[
+                { label: '确认已修复，恢复可用', value: 'FIXED' },
+                { label: '确认无法修复，设备报废', value: 'UNREPAIRABLE' },
+              ]}
+            />
+          </Form.Item>
+          <Form.Item name="result" label="验收说明">
+            <Input.TextArea rows={3} placeholder="可补充验收意见，不填写则保留维修人员结果" />
+          </Form.Item>
         </Form>
       </Modal>
       <Modal title="提交维修单" open={createOpen} onCancel={() => setCreateOpen(false)} onOk={() => createForm.submit()} destroyOnClose>

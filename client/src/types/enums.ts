@@ -30,6 +30,7 @@ export const repairStatusNames: Record<string, string> = {
   WAITING_ACCEPT: '待维修',
   REPAIRING: '维修中',
   WAITING_PARTS: '待配件',
+  WAITING_CONFIRM: '待验收',
   FIXED: '已修复',
   UNREPAIRABLE: '无法修复',
 };
@@ -51,6 +52,7 @@ export const tagColors: Record<string, string> = {
   OVERDUE: 'red',
   WAITING_ACCEPT: 'gold',
   WAITING_PARTS: 'magenta',
+  WAITING_CONFIRM: 'blue',
   FIXED: 'green',
   UNREPAIRABLE: 'red',
 };
@@ -71,6 +73,8 @@ export const auditActionNames: Record<string, string> = {
   RETURN_DEVICE_ABNORMAL: '登记异常归还',
   CREATE_REPAIR_RECORD: '提交维修单',
   ACCEPT_REPAIR_TASK: '接收维修任务',
+  CONFIRM_REPAIR_FIXED: '确认维修已修复',
+  CONFIRM_REPAIR_UNREPAIRABLE: '确认维修无法修复',
 };
 
 export function formatAuditAction(action: string) {

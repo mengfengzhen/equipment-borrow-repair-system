@@ -1,6 +1,10 @@
 import {
+  AuditOutlined,
+  AppstoreOutlined,
   CheckCircleOutlined,
+  FileTextOutlined,
   LockOutlined,
+  ToolOutlined,
   UserOutlined,
 } from '@ant-design/icons';
 import { Button, Card, Form, Input, Select, Space, Tabs, Typography, message } from 'antd';
@@ -90,12 +94,34 @@ export function LoginPage() {
 
   return (
     <div className="login-page">
-      <div className="login-hero">
-        <div className="login-kicker">Borrow & Repair</div>
-        <Typography.Title>设备借用与维修管理系统</Typography.Title>
-        <Typography.Paragraph>
-          面向企业资产管理场景，串起设备台账、借用审批、领取归还、异常维修和操作追踪，适合现场演示完整业务闭环。
-        </Typography.Paragraph>
+      <div className="login-left">
+        <section className="login-hero">
+          <h1 className="login-title">设备借用与维修管理系统</h1>
+        </section>
+        <section className="login-feature-panel">
+          <div className="login-feature-grid">
+            <div>
+              <AppstoreOutlined />
+              <span>设备管理</span>
+              <em>设备台账、状态监控、生命周期管理</em>
+            </div>
+            <div>
+              <FileTextOutlined />
+              <span>借用申请</span>
+              <em>在线申请、设备查询、提交审批</em>
+            </div>
+            <div>
+              <AuditOutlined />
+              <span>审批流转</span>
+              <em>多级审批、流程追踪、实时通知</em>
+            </div>
+            <div>
+              <ToolOutlined />
+              <span>维修记录</span>
+              <em>故障登记、维修记录、维护提醒</em>
+            </div>
+          </div>
+        </section>
       </div>
       <Card className="login-card">
         <Tabs

@@ -5,7 +5,7 @@ import { Roles } from '../common/constants';
 import { CurrentUser, RequestUser } from '../common/current-user.decorator';
 import { RequireRoles } from '../common/roles.decorator';
 import { RolesGuard } from '../common/roles.guard';
-import { CreateRepairDto, RepairQueryDto, UpdateRepairStatusDto } from './dto';
+import { ConfirmRepairDto, CreateRepairDto, RepairQueryDto, UpdateRepairStatusDto } from './dto';
 import { RepairsService } from './repairs.service';
 
 @ApiTags('repairs')
@@ -37,5 +37,11 @@ export class RepairsController {
   @RequireRoles(Roles.REPAIRER)
   updateStatus(@Param('id') id: string, @Body() dto: UpdateRepairStatusDto, @CurrentUser() user: RequestUser) {
     return this.service.updateStatus(id, dto, user);
+  }
+
+  @Patch(':id/confirm')
+  @RequireRoles(Roles.ADMIN)
+  confirm(@Param('id') id: string, @Body() dto: ConfirmRepairDto, @CurrentUser() user: RequestUser) {
+    return this.service.confirm(id, dto, user);
   }
 }

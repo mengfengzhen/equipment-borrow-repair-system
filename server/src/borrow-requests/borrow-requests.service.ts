@@ -15,6 +15,7 @@ import {
 } from '../common/constants';
 import { RequestUser } from '../common/current-user.decorator';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
+import { buildDeviceGroupKey } from '../devices/devices.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { SettingsService } from '../settings/settings.service';
 import { ApprovalDto, BorrowQueryDto, CreateBorrowRequestDto, ReturnBorrowDto, SupplementDto } from './dto';
@@ -146,48 +147,56 @@ export class BorrowRequestsService {
       throw new BadRequestException('借用开始时间必须早于预计归还时间');
     }
 
-    const device = await this.prisma.device.findUnique({ where: { id: dto.deviceId } });
-    if (!device) {
-      throw new NotFoundException('设备不存在');
-    }
-    if (device.status !== DeviceStatus.AVAILABLE) {
-      throw new BadRequestException('该设备当前不可申请借用');
-    }
+    const quantity = dto.quantity || 1;
+    const devices = await this.resolveBorrowDevices(dto, quantity);
 
-    await this.assertNoTimeConflict(dto.deviceId, start, end);
+    for (const device of devices) {
+      await this.assertNoTimeConflict(device.id, start, end);
+    }
 
     const approvalRequired = await this.settingsService.getApprovalRequired();
     const nextDeviceStatus = approvalRequired ? DeviceStatus.BORROW_PENDING : DeviceStatus.RESERVED;
     const nextBorrowStatus = approvalRequired ? BorrowStatus.PENDING_APPROVAL : BorrowStatus.APPROVED;
 
     const created = await this.prisma.$transaction(async (tx) => {
-      await tx.device.update({ where: { id: dto.deviceId }, data: { status: nextDeviceStatus } });
-      return tx.borrowRequest.create({
-        data: {
-          deviceId: dto.deviceId,
-          applicantId: user.id,
-          departmentId: user.departmentId,
-          borrowStartAt: start,
-          borrowEndAt: end,
-          purpose: dto.purpose,
-          remark: dto.remark,
-          attachmentNames: dto.attachmentNames,
-          status: nextBorrowStatus,
-          approvalRequired,
-        },
-        include: { device: true },
-      });
+      const createdRequests = [];
+      for (const device of devices) {
+        await tx.device.update({ where: { id: device.id }, data: { status: nextDeviceStatus } });
+        const request = await tx.borrowRequest.create({
+          data: {
+            deviceId: device.id,
+            applicantId: user.id,
+            departmentId: user.departmentId,
+            borrowStartAt: start,
+            borrowEndAt: end,
+            purpose: dto.purpose,
+            remark: dto.remark,
+            attachmentNames: dto.attachmentNames,
+            status: nextBorrowStatus,
+            approvalRequired,
+          },
+          include: { device: true },
+        });
+        createdRequests.push(request);
+      }
+      return createdRequests;
     });
 
     await this.auditLogs.record({
       actorId: user.id,
       action: 'CREATE_BORROW_REQUEST',
       targetType: 'BORROW_REQUEST',
-      targetId: created.id,
-      detail: { deviceId: dto.deviceId, borrowStartAt: start, borrowEndAt: end },
+      targetId: created[0]?.id,
+      detail: {
+        deviceIds: devices.map((device) => device.id),
+        deviceGroupKey: dto.deviceGroupKey,
+        quantity,
+        borrowStartAt: start,
+        borrowEndAt: end,
+      },
     });
 
-    return created;
+    return quantity === 1 ? created[0] : created;
   }
 
   async supplement(id: string, dto: SupplementDto, user: RequestUser) {
@@ -403,6 +412,40 @@ export class BorrowRequestsService {
     if (user.role === Roles.USER && applicantId === user.id) return;
     if (user.role === Roles.MANAGER && departmentId === user.departmentId) return;
     throw new ForbiddenException('无权查看该申请');
+  }
+
+  private async resolveBorrowDevices(dto: CreateBorrowRequestDto, quantity: number) {
+    if (dto.deviceId) {
+      const device = await this.prisma.device.findUnique({ where: { id: dto.deviceId } });
+      if (!device) {
+        throw new NotFoundException('设备不存在');
+      }
+      if (device.status !== DeviceStatus.AVAILABLE) {
+        throw new BadRequestException('该设备当前不可申请借用');
+      }
+      if (quantity > 1) {
+        const groupKey = buildDeviceGroupKey(device);
+        return this.resolveGroupDevices(groupKey, quantity);
+      }
+      return [device];
+    }
+
+    if (!dto.deviceGroupKey) {
+      throw new BadRequestException('请选择借用设备');
+    }
+    return this.resolveGroupDevices(dto.deviceGroupKey, quantity);
+  }
+
+  private async resolveGroupDevices(groupKey: string, quantity: number) {
+    const devices = await this.prisma.device.findMany({
+      where: { deletedAt: null, status: DeviceStatus.AVAILABLE },
+      orderBy: { createdAt: 'asc' },
+    });
+    const matched = devices.filter((device) => buildDeviceGroupKey(device) === groupKey).slice(0, quantity);
+    if (matched.length < quantity) {
+      throw new BadRequestException(`该型号当前可用库存不足 ${quantity} 台`);
+    }
+    return matched;
   }
 
   private async assertNoTimeConflict(deviceId: string, start: Date, end: Date, excludeId?: string) {

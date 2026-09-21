@@ -21,6 +21,10 @@ export class DeviceQueryDto {
   @IsOptional()
   @IsString()
   location?: string;
+
+  @IsOptional()
+  @IsString()
+  scope?: string;
 }
 
 export class CreateDeviceDto {

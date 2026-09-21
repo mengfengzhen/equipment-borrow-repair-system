@@ -1,4 +1,5 @@
-import { IsBoolean, IsDateString, IsIn, IsOptional, IsString, MinLength } from 'class-validator';
+import { IsBoolean, IsDateString, IsIn, IsInt, IsOptional, IsString, Max, Min, MinLength } from 'class-validator';
+import { Type } from 'class-transformer';
 import { ReturnCondition } from '../common/constants';
 
 export class BorrowQueryDto {
@@ -28,8 +29,20 @@ export class BorrowQueryDto {
 }
 
 export class CreateBorrowRequestDto {
+  @IsOptional()
   @IsString()
-  deviceId!: string;
+  deviceId?: string;
+
+  @IsOptional()
+  @IsString()
+  deviceGroupKey?: string;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(20)
+  quantity?: number;
 
   @IsDateString()
   borrowStartAt!: string;

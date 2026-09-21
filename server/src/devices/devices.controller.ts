@@ -20,8 +20,14 @@ export class DevicesController {
   ) {}
 
   @Get()
-  list(@Query() query: DeviceQueryDto) {
-    return this.devicesService.list(query);
+  list(@Query() query: DeviceQueryDto, @CurrentUser() user: RequestUser) {
+    return this.devicesService.list(query, user);
+  }
+
+  @Get('borrow-options')
+  @RequireRoles(Roles.USER)
+  borrowOptions() {
+    return this.devicesService.borrowOptions();
   }
 
   @Get(':id')

@@ -3,7 +3,7 @@ import { DeviceStatus, RepairStatus, Roles } from '../common/constants';
 import { RequestUser } from '../common/current-user.decorator';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import { PrismaService } from '../prisma/prisma.service';
-import { CreateRepairDto, RepairQueryDto, UpdateRepairStatusDto } from './dto';
+import { ConfirmRepairDto, CreateRepairDto, RepairQueryDto, UpdateRepairStatusDto } from './dto';
 
 @Injectable()
 export class RepairsService {
@@ -73,28 +73,22 @@ export class RepairsService {
     if (repair.repairerId !== user.id) {
       throw new ForbiddenException('只能处理分配给自己的维修任务');
     }
-    if (([RepairStatus.FIXED, RepairStatus.UNREPAIRABLE] as string[]).includes(repair.status)) {
+    if (([RepairStatus.WAITING_CONFIRM, RepairStatus.FIXED, RepairStatus.UNREPAIRABLE] as string[]).includes(repair.status)) {
       throw new BadRequestException('已结束的维修任务不能再次更新');
     }
 
     const terminal = ([RepairStatus.FIXED, RepairStatus.UNREPAIRABLE] as string[]).includes(dto.status);
+    const nextStatus = terminal ? RepairStatus.WAITING_CONFIRM : dto.status;
     const updated = await this.prisma.$transaction(async (tx) => {
       const record = await tx.repairRecord.update({
         where: { id },
         data: {
-          status: dto.status,
+          status: nextStatus,
           result: dto.result,
           cost: dto.cost,
           repairEndAt: terminal ? new Date() : undefined,
         },
       });
-
-      if (dto.status === RepairStatus.FIXED) {
-        await tx.device.update({ where: { id: repair.deviceId }, data: { status: DeviceStatus.AVAILABLE } });
-      }
-      if (dto.status === RepairStatus.UNREPAIRABLE) {
-        await tx.device.update({ where: { id: repair.deviceId }, data: { status: DeviceStatus.SCRAPPED } });
-      }
 
       return record;
     });
@@ -109,10 +103,45 @@ export class RepairsService {
     return updated;
   }
 
+  async confirm(id: string, dto: ConfirmRepairDto, user: RequestUser) {
+    const repair = await this.prisma.repairRecord.findUnique({ where: { id }, include: { device: true } });
+    if (!repair) throw new NotFoundException('维修记录不存在');
+    if (repair.status !== RepairStatus.WAITING_CONFIRM) {
+      throw new BadRequestException('只有待验收的维修任务可以确认');
+    }
+
+    const updated = await this.prisma.$transaction(async (tx) => {
+      const record = await tx.repairRecord.update({
+        where: { id },
+        data: {
+          status: dto.status,
+          result: dto.result || repair.result,
+          repairEndAt: repair.repairEndAt || new Date(),
+        },
+      });
+
+      await tx.device.update({
+        where: { id: repair.deviceId },
+        data: { status: dto.status === RepairStatus.FIXED ? DeviceStatus.AVAILABLE : DeviceStatus.SCRAPPED },
+      });
+
+      return record;
+    });
+
+    await this.auditLogs.record({
+      actorId: user.id,
+      action: `CONFIRM_REPAIR_${dto.status}`,
+      targetType: 'REPAIR_RECORD',
+      targetId: id,
+      detail: dto,
+    });
+    return updated;
+  }
+
   async accept(id: string, user: RequestUser) {
     const repair = await this.prisma.repairRecord.findUnique({ where: { id }, include: { device: true } });
     if (!repair) throw new NotFoundException('维修记录不存在');
-    if (([RepairStatus.FIXED, RepairStatus.UNREPAIRABLE] as string[]).includes(repair.status)) {
+    if (([RepairStatus.WAITING_CONFIRM, RepairStatus.FIXED, RepairStatus.UNREPAIRABLE] as string[]).includes(repair.status)) {
       throw new BadRequestException('已结束的维修任务不能接单');
     }
     if (repair.repairerId && repair.repairerId !== user.id) {

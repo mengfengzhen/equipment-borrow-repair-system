@@ -43,7 +43,7 @@ export class StatisticsService {
       this.prisma.borrowRequest.count({ where: { status: BorrowStatus.APPROVED } }),
       this.prisma.repairRecord.count({
         where: {
-          status: { in: [RepairStatus.WAITING_ACCEPT, RepairStatus.REPAIRING, RepairStatus.WAITING_PARTS] },
+          status: { in: [RepairStatus.WAITING_ACCEPT, RepairStatus.REPAIRING, RepairStatus.WAITING_PARTS, RepairStatus.WAITING_CONFIRM] },
         },
       }),
       this.prisma.borrowRequest.count({
@@ -71,7 +71,7 @@ export class StatisticsService {
       this.prisma.repairRecord.count({ where: { repairerId: user.id, status: RepairStatus.REPAIRING } }),
       this.prisma.repairRecord.count({ where: { repairerId: user.id, status: RepairStatus.WAITING_PARTS } }),
       this.prisma.repairRecord.count({
-        where: { repairerId: user.id, status: { in: [RepairStatus.FIXED, RepairStatus.UNREPAIRABLE] } },
+        where: { repairerId: user.id, status: { in: [RepairStatus.WAITING_CONFIRM, RepairStatus.FIXED, RepairStatus.UNREPAIRABLE] } },
       }),
       this.prisma.auditLog.findMany({
         orderBy: { createdAt: 'desc' },
@@ -159,11 +159,11 @@ export class StatisticsService {
       this.prisma.borrowRequest.groupBy({ by: ['departmentId'], where: borrowWhere, _count: true }),
       this.prisma.borrowRequest.findMany({
         where: borrowWhere,
-        include: { device: { select: { id: true, name: true, code: true, type: true, status: true } } },
+        include: { device: { select: { id: true, name: true, code: true, type: true, brand: true, model: true, status: true } } },
       }),
       this.prisma.repairRecord.findMany({
         where: repairWhere,
-        include: { device: { select: { id: true, name: true, code: true, type: true, status: true } } },
+        include: { device: { select: { id: true, name: true, code: true, type: true, brand: true, model: true, status: true } } },
       }),
       this.prisma.borrowRequest.findMany({
         where: {
@@ -178,7 +178,7 @@ export class StatisticsService {
       this.prisma.borrowRequest.findMany({
         where: overdueWhere,
         include: {
-          device: { select: { id: true, name: true, code: true, type: true } },
+            device: { select: { id: true, name: true, code: true, type: true, brand: true, model: true } },
           applicant: { select: { id: true, name: true, username: true } },
           department: { select: { id: true, name: true } },
         },
@@ -231,6 +231,8 @@ type RankingDevice = {
   name: string;
   code: string;
   type: string;
+  brand?: string | null;
+  model?: string | null;
   status: string;
 };
 
@@ -274,6 +276,8 @@ function topByDevice(
     code: string;
     type: string;
     status: string;
+    deviceCount: number;
+    deviceIds: Set<string>;
     count: number;
     borrowCount: number;
     borrowDays: number;
@@ -282,18 +286,26 @@ function topByDevice(
   }>();
 
   const ensure = (device: RankingDevice) => {
-    const current = map.get(device.id) || {
-      name: device.name,
-      code: device.code,
+    const groupKey = `${device.type}::${device.brand || ''}::${device.model || device.name}`;
+    const current = map.get(groupKey) || {
+      name: [device.brand, device.model].filter(Boolean).join(' ') || device.name,
+      code: '',
       type: device.type,
       status: device.status,
+      deviceCount: 0,
+      deviceIds: new Set<string>(),
       count: 0,
       borrowCount: 0,
       borrowDays: 0,
       repairCount: 0,
       repairCost: 0,
     };
-    map.set(device.id, current);
+    if (!current.deviceIds.has(device.id)) {
+      current.deviceIds.add(device.id);
+      current.deviceCount += 1;
+      current.code = `${device.type} / ${device.model || '未填型号'} / ${current.deviceCount} 台`;
+    }
+    map.set(groupKey, current);
     return current;
   };
 
@@ -315,10 +327,14 @@ function topByDevice(
   });
 
   return Array.from(map.values())
-    .map((item) => ({
-      ...item,
-      count: mode === 'borrow' ? item.borrowCount : item.repairCount,
-    }))
+    .map((item) => {
+      const { deviceIds, ...rest } = item;
+      void deviceIds;
+      return {
+        ...rest,
+        count: mode === 'borrow' ? item.borrowCount : item.repairCount,
+      };
+    })
     .filter((item) => item.count > 0)
     .sort((a, b) => {
       const primary = mode === 'borrow'

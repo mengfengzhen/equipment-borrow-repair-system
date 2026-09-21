@@ -46,3 +46,15 @@ export class UpdateRepairStatusDto {
   @IsNumber()
   cost?: number;
 }
+
+export class ConfirmRepairDto {
+  @IsIn([
+    RepairStatus.FIXED,
+    RepairStatus.UNREPAIRABLE,
+  ])
+  status!: string;
+
+  @IsOptional()
+  @IsString()
+  result?: string;
+}

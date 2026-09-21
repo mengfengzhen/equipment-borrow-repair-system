@@ -23,17 +23,32 @@ type DeviceHistory = {
   repairs: Array<{ id: string; status: string; faultDescription: string; repairStartAt: string; repairer?: { name: string } }>;
 };
 
+type BorrowOption = {
+  groupKey: string;
+  name: string;
+  type: string;
+  brand?: string;
+  model?: string;
+  availableCount: number;
+  locations: string[];
+  sampleDeviceId: string;
+};
+
 export function DevicesPage() {
   const [devices, setDevices] = useState<Device[]>([]);
   const [borrowRequests, setBorrowRequests] = useState<BorrowRequest[]>([]);
+  const [borrowOptions, setBorrowOptions] = useState<BorrowOption[]>([]);
   const [users, setUsers] = useState<User[]>([]);
   const [open, setOpen] = useState(false);
   const [editingDevice, setEditingDevice] = useState<Device>();
-  const [borrowOpen, setBorrowOpen] = useState<Device>();
+  const [borrowOpen, setBorrowOpen] = useState(false);
+  const [selectedBorrowOptionKey, setSelectedBorrowOptionKey] = useState<string>();
+  const [repairConfirmDevice, setRepairConfirmDevice] = useState<Device>();
   const [detailOpen, setDetailOpen] = useState<{ device: Device; history?: DeviceHistory }>();
   const [form] = Form.useForm();
   const [filterForm] = Form.useForm();
   const [borrowForm] = Form.useForm();
+  const [repairConfirmForm] = Form.useForm();
   const [searchParams, setSearchParams] = useSearchParams();
   const user = JSON.parse(localStorage.getItem('user') || '{}') as User;
   const canApplyBorrow = user.role === 'USER';
@@ -59,14 +74,16 @@ export function DevicesPage() {
   const load = async () => {
     try {
       const query = buildQuery();
-      const [deviceRes, borrowRes, userRes] = await Promise.all([
+      const [deviceRes, borrowRes, userRes, optionRes] = await Promise.all([
         http.get(`/devices${query}`),
         canApplyBorrow ? http.get('/borrow-requests') : Promise.resolve([]),
         canManageDevices ? http.get('/users') : Promise.resolve([]),
+        canApplyBorrow ? http.get('/devices/borrow-options') : Promise.resolve([]),
       ]);
       setDevices(deviceRes as unknown as Device[]);
       setBorrowRequests(borrowRes as unknown as BorrowRequest[]);
       setUsers(userRes as unknown as User[]);
+      setBorrowOptions(optionRes as unknown as BorrowOption[]);
     } catch (error) {
       message.error((error as Error).message);
     }
@@ -184,7 +201,7 @@ export function DevicesPage() {
   const openCreateDevice = () => {
     setEditingDevice(undefined);
     form.resetFields();
-    form.setFieldsValue({ ownerId: user.id, quantity: 1 });
+    form.setFieldsValue({ quantity: 1 });
     setOpen(true);
   };
 
@@ -219,22 +236,46 @@ export function DevicesPage() {
     }
   };
 
+  const openBorrowModal = () => {
+    setBorrowOpen(true);
+    setSelectedBorrowOptionKey(undefined);
+    borrowForm.resetFields();
+    borrowForm.setFieldsValue({ borrowRange: getBorrowTimeDefaults(), quantity: 1 });
+  };
+
   const submitBorrow = async (values: Record<string, string | UploadFile[]>) => {
     try {
       const range = normalizeBorrowRange(values.borrowRange as unknown as [dayjs.Dayjs, dayjs.Dayjs]);
       const attachments = (values.attachments as UploadFile[] | undefined) || [];
       const uploadedFiles = await uploadFiles(attachments);
+      const quantity = Number(values.quantity || 1);
       await http.post('/borrow-requests', {
-        deviceId: borrowOpen?.id,
+        deviceGroupKey: values.deviceGroupKey,
+        quantity,
         borrowStartAt: range[0].toISOString(),
         borrowEndAt: range[1].toISOString(),
         purpose: values.purpose,
         remark: values.remark,
         attachmentNames: serializeAttachments(uploadedFiles),
       });
-      message.success('借用申请已提交');
-      setBorrowOpen(undefined);
+      message.success(quantity > 1 ? `已提交 ${quantity} 台设备借用申请` : '借用申请已提交');
+      setBorrowOpen(false);
+      setSelectedBorrowOptionKey(undefined);
       borrowForm.resetFields();
+      load();
+    } catch (error) {
+      message.error((error as Error).message);
+    }
+  };
+
+  const confirmRepairFromDevice = async (values: Record<string, unknown>) => {
+    const repairId = repairConfirmDevice?.currentRepair?.id;
+    if (!repairId) return;
+    try {
+      await http.patch(`/repairs/${repairId}/confirm`, values);
+      message.success('维修验收已确认');
+      setRepairConfirmDevice(undefined);
+      repairConfirmForm.resetFields();
       load();
     } catch (error) {
       message.error((error as Error).message);
@@ -256,26 +297,32 @@ export function DevicesPage() {
       render: (_, row) => {
         const activeBorrow = activeBorrowByDevice[row.id];
         const hasActiveBorrow = Boolean(activeBorrow);
-        const deviceUnavailable = row.status !== 'AVAILABLE';
         const disableButtonText = row.status === 'DISABLED' ? '已停用' : '停用';
         const disableUnavailable = ['BORROW_PENDING', 'RESERVED', 'BORROWED', 'DISABLED', 'SCRAPPED'].includes(row.status);
         const scrapUnavailable = ['BORROW_PENDING', 'RESERVED', 'BORROWED', 'DISABLED', 'SCRAPPED'].includes(row.status);
 
         return (
           <div className="device-action-grid">
-            <Button className="table-action-button" icon={<EyeOutlined />} onClick={() => openDetail(row)}>
-              详情
-            </Button>
-            {canApplyBorrow && (
-              <Button className="table-action-button" disabled={deviceUnavailable || hasActiveBorrow} onClick={() => setBorrowOpen(row)}>
-                申请使用
-              </Button>
-            )}
-            {user.role === 'ADMIN' && (
+            {canManageDevices && (
               <>
+                <Button className="table-action-button" icon={<EyeOutlined />} onClick={() => openDetail(row)}>
+                  详情
+                </Button>
                 <Button className="table-action-button" icon={<EditOutlined />} onClick={() => openEditDevice(row)}>
                   编辑
                 </Button>
+                {row.currentRepair && (
+                  <Button
+                    className="table-action-button"
+                    type="primary"
+                    onClick={() => {
+                      setRepairConfirmDevice(row);
+                      repairConfirmForm.setFieldsValue({ status: 'FIXED', result: row.currentRepair?.result });
+                    }}
+                  >
+                    验收确认
+                  </Button>
+                )}
                 <Popconfirm
                   title="确认停用设备？"
                   description={`停用后「${row.name}」将不能继续申请借用。`}
@@ -322,7 +369,7 @@ export function DevicesPage() {
                 </Popconfirm>
               </>
             )}
-            {!canApplyBorrow && user.role !== 'ADMIN' && <Typography.Text type="secondary">-</Typography.Text>}
+            {!canManageDevices && <Typography.Text type="secondary">{hasActiveBorrow ? '使用中' : '-'}</Typography.Text>}
           </div>
         );
       },
@@ -335,10 +382,17 @@ export function DevicesPage() {
         <div>
           <h1 className="page-title">设备管理</h1>
           <Typography.Text type="secondary">
-            {searchParams.toString() ? '根据状态、类型、品牌和地点查看设备。' : '查看设备状态、资产信息和可借用情况。'}
+            {user.role === 'USER'
+              ? '查看自己待领取、已领取和逾期未还的设备，需要新设备时提交借用申请。'
+              : searchParams.toString() ? '根据状态、类型、品牌和地点查看设备。' : '查看设备状态、资产信息和可借用情况。'}
           </Typography.Text>
         </div>
-        {user.role === 'ADMIN' && (
+        {canApplyBorrow && (
+          <Button className="borrow-cta-button" type="primary" size="large" icon={<PlusOutlined />} onClick={openBorrowModal}>
+            申请设备
+          </Button>
+        )}
+        {canManageDevices && (
           <Button type="primary" icon={<PlusOutlined />} onClick={openCreateDevice}>
             新增设备
           </Button>
@@ -428,7 +482,7 @@ export function DevicesPage() {
               showSearch
               placeholder="选择默认保管责任人"
               optionFilterProp="label"
-              options={users.map((item) => ({
+              options={buildOwnerOptions(users, user).map((item) => ({
                 label: `${item.name}（${item.username}）`,
                 value: item.id,
               }))}
@@ -442,6 +496,30 @@ export function DevicesPage() {
           </Form.Item>
           <Form.Item name="value" label="设备价值"><InputNumber style={{ width: '100%' }} /></Form.Item>
           <Form.Item name="description" label="说明"><Input.TextArea rows={3} /></Form.Item>
+        </Form>
+      </Modal>
+      <Modal
+        title={`维修验收：${repairConfirmDevice?.name || ''}`}
+        open={Boolean(repairConfirmDevice)}
+        onCancel={() => {
+          setRepairConfirmDevice(undefined);
+          repairConfirmForm.resetFields();
+        }}
+        onOk={() => repairConfirmForm.submit()}
+        destroyOnClose
+      >
+        <Form form={repairConfirmForm} layout="vertical" onFinish={confirmRepairFromDevice}>
+          <Form.Item name="status" label="验收结果" rules={[{ required: true, message: '请选择验收结果' }]}>
+            <Select
+              options={[
+                { label: '确认已修复，恢复可用', value: 'FIXED' },
+                { label: '确认无法修复，设备报废', value: 'UNREPAIRABLE' },
+              ]}
+            />
+          </Form.Item>
+          <Form.Item name="result" label="验收说明">
+            <Input.TextArea rows={3} placeholder="可补充验收意见，不填写则保留维修人员结果" />
+          </Form.Item>
         </Form>
       </Modal>
       <Drawer
@@ -498,8 +576,50 @@ export function DevicesPage() {
           </Space>
         )}
       </Drawer>
-      <Modal title={`申请借用：${borrowOpen?.name || ''}`} open={Boolean(borrowOpen)} onCancel={() => setBorrowOpen(undefined)} onOk={() => borrowForm.submit()} destroyOnClose>
+      <Modal
+        title="申请设备"
+        open={borrowOpen}
+        onCancel={() => {
+          setBorrowOpen(false);
+          setSelectedBorrowOptionKey(undefined);
+        }}
+        onOk={() => borrowForm.submit()}
+        destroyOnClose
+      >
         <Form form={borrowForm} layout="vertical" onFinish={submitBorrow}>
+          <Form.Item name="deviceGroupKey" label="设备型号" rules={[{ required: true, message: '请选择设备型号' }]}>
+            <Select
+              showSearch
+              placeholder="选择可申请的设备型号"
+              optionFilterProp="label"
+              onChange={(value) => {
+                setSelectedBorrowOptionKey(value);
+                borrowForm.setFieldsValue({ quantity: 1 });
+              }}
+              options={borrowOptions.map((item) => ({
+                label: `${item.name} / ${item.type} / 可用 ${item.availableCount} 台`,
+                value: item.groupKey,
+              }))}
+            />
+          </Form.Item>
+          <Form.Item shouldUpdate={(prev, current) => prev.deviceGroupKey !== current.deviceGroupKey} noStyle>
+            {() => {
+              const option = borrowOptions.find((item) => item.groupKey === (selectedBorrowOptionKey || borrowForm.getFieldValue('deviceGroupKey')));
+              return option ? (
+                <Typography.Text type="secondary">
+                  当前可用 {option.availableCount} 台，位置：{option.locations.join('、') || '-'}
+                </Typography.Text>
+              ) : null;
+            }}
+          </Form.Item>
+          <Form.Item name="quantity" label="借用数量" rules={[{ required: true, message: '请输入借用数量' }]}>
+            <InputNumber
+              min={1}
+              max={borrowOptions.find((item) => item.groupKey === selectedBorrowOptionKey)?.availableCount || 1}
+              precision={0}
+              style={{ width: '100%' }}
+            />
+          </Form.Item>
           <Form.Item
             name="borrowRange"
             label="借用时间"
@@ -538,4 +658,19 @@ function getKeeperName(device: Device) {
     return `${device.currentBorrower.name}（当前使用）`;
   }
   return device.owner?.name || '-';
+}
+
+function buildOwnerOptions(users: User[], currentUser: User) {
+  if (!currentUser?.id || users.some((item) => item.id === currentUser.id)) {
+    return users;
+  }
+  return [
+    ...users,
+    {
+      id: currentUser.id,
+      username: currentUser.username,
+      name: currentUser.name,
+      role: currentUser.role,
+    },
+  ];
 }
