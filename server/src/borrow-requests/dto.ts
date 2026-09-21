@@ -1,4 +1,4 @@
-import { IsArray, IsBoolean, IsDateString, IsIn, IsInt, IsOptional, IsString, Max, Min, MinLength, ValidateNested } from 'class-validator';
+import { IsArray, IsBoolean, IsDateString, IsIn, IsInt, IsNotEmpty, IsOptional, IsString, Max, Min, MinLength, ValidateNested } from 'class-validator';
 import { Type } from 'class-transformer';
 import { ReturnCondition } from '../common/constants';
 
@@ -65,7 +65,7 @@ export class CreateBorrowRequestDto {
 
 export class ApprovalDto {
   @IsString()
-  @MinLength(2)
+  @IsNotEmpty()
   comment!: string;
 }
 

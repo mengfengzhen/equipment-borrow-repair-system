@@ -320,7 +320,7 @@ export function DevicesPage() {
                     onClick={() => {
                       setRepairConfirmDevice(row);
                       repairConfirmForm.setFieldsValue({
-                        status: row.currentRepair?.repairResultStatus || 'FIXED',
+                        status: repairConfirmStatus(row.currentRepair),
                         result: row.currentRepair?.result,
                         location: row.location,
                       });
@@ -688,6 +688,22 @@ export function DevicesPage() {
       </Modal>
     </div>
   );
+}
+
+function repairConfirmStatus(repair?: { repairResultStatus?: string; result?: string }) {
+  if (['FIXED', 'UNREPAIRABLE'].includes(repair?.repairResultStatus || '')) {
+    return repair?.repairResultStatus;
+  }
+
+  if (repair?.result && /(无法修复|不可修复|修不好|未修好|报废|unrepairable)/i.test(repair.result)) {
+    return 'UNREPAIRABLE';
+  }
+
+  if (repair?.result && /(已修复|修复完成|恢复可用|fixed)/i.test(repair.result)) {
+    return 'FIXED';
+  }
+
+  return undefined;
 }
 
 function getKeeperName(device: Device) {

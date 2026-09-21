@@ -132,7 +132,7 @@ export function RepairsPage() {
   const openConfirm = (row: RepairRecord) => {
     setConfirming(row);
     confirmForm.setFieldsValue({
-      status: row.repairResultStatus || 'FIXED',
+      status: repairConfirmStatus(row),
       result: row.result,
       location: row.device.location,
     });
@@ -340,4 +340,20 @@ export function RepairsPage() {
       </Modal>
     </div>
   );
+}
+
+function repairConfirmStatus(repair: Pick<RepairRecord, 'repairResultStatus' | 'result'>) {
+  if (['FIXED', 'UNREPAIRABLE'].includes(repair.repairResultStatus || '')) {
+    return repair.repairResultStatus;
+  }
+
+  if (repair.result && /(无法修复|不可修复|修不好|未修好|报废|unrepairable)/i.test(repair.result)) {
+    return 'UNREPAIRABLE';
+  }
+
+  if (repair.result && /(已修复|修复完成|恢复可用|fixed)/i.test(repair.result)) {
+    return 'FIXED';
+  }
+
+  return undefined;
 }
