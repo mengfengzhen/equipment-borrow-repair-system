@@ -94,6 +94,7 @@ export function BorrowRequestsPage() {
   };
 
   const currentBorrowRows = rows.filter((row) => ['PICKED_UP', 'OVERDUE'].includes(row.status));
+  const totalRequestedQuantity = rows.reduce((sum, row) => sum + (row.quantity || 1), 0);
 
   const updateApprovalRequired = async (approvalRequired: boolean) => {
     try {
@@ -335,7 +336,7 @@ export function BorrowRequestsPage() {
             defaultPageSize: 10,
             showSizeChanger: true,
             pageSizeOptions: ['5', '10', '20'],
-            showTotal: (total) => `共 ${total} 条申请`,
+            showTotal: (total) => `共 ${total} 条申请 / ${totalRequestedQuantity} 台设备`,
           }}
           expandable={{ expandedRowRender: (row) => (
             <div>
