@@ -13,6 +13,7 @@ import {
   ReturnCondition,
   Roles,
 } from '../common/constants';
+import { appDateKey, parseBorrowDate } from '../common/borrow-date';
 import { RequestUser } from '../common/current-user.decorator';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import { buildDeviceGroupKey } from '../devices/devices.service';
@@ -39,9 +40,11 @@ export class BorrowRequestsService {
     };
 
     if (query.borrowStartAt || query.borrowEndAt) {
+      const queryStart = query.borrowStartAt ? parseBorrowDate(query.borrowStartAt, 'start') : undefined;
+      const queryEnd = query.borrowEndAt ? parseBorrowDate(query.borrowEndAt, 'end') : undefined;
       where.AND = [
-        query.borrowEndAt ? { borrowStartAt: { lte: new Date(query.borrowEndAt) } } : {},
-        query.borrowStartAt ? { borrowEndAt: { gte: new Date(query.borrowStartAt) } } : {},
+        queryEnd && !Number.isNaN(queryEnd.getTime()) ? { borrowStartAt: { lte: queryEnd } } : {},
+        queryStart && !Number.isNaN(queryStart.getTime()) ? { borrowEndAt: { gte: queryStart } } : {},
       ];
     }
 
@@ -143,14 +146,12 @@ export class BorrowRequestsService {
   }
 
   async create(dto: CreateBorrowRequestDto, user: RequestUser) {
-    const start = new Date(dto.borrowStartAt);
-    const end = new Date(dto.borrowEndAt);
+    const start = parseBorrowDate(dto.borrowStartAt, 'start');
+    const end = parseBorrowDate(dto.borrowEndAt, 'end');
     if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) {
       throw new BadRequestException('借用时间格式不正确');
     }
-    const todayStart = new Date();
-    todayStart.setHours(0, 0, 0, 0);
-    if (start < todayStart) {
+    if (appDateKey(start) < appDateKey(new Date())) {
       throw new BadRequestException('借用开始时间不能早于当前时间');
     }
     if (!(start < end)) {

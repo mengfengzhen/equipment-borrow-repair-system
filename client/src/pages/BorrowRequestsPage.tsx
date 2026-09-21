@@ -84,8 +84,8 @@ export function BorrowRequestsPage() {
     if (values.status) params.status = values.status;
     if (values.applicantId) params.applicantId = values.applicantId;
     if (values.departmentId) params.departmentId = values.departmentId;
-    if (values.borrowRange?.[0]) params.borrowStartAt = values.borrowRange[0].startOf('day').toISOString();
-    if (values.borrowRange?.[1]) params.borrowEndAt = values.borrowRange[1].endOf('day').toISOString();
+    if (values.borrowRange?.[0]) params.borrowStartAt = values.borrowRange[0].format('YYYY-MM-DD');
+    if (values.borrowRange?.[1]) params.borrowEndAt = values.borrowRange[1].format('YYYY-MM-DD');
     setSearchParams(params);
   };
 
@@ -110,7 +110,11 @@ export function BorrowRequestsPage() {
     if (user.role !== 'ADMIN') return;
     try {
       const result = await http.get(`/borrow-requests/${row.id}/available-devices`);
-      setAvailableDevices(result as unknown as Device[]);
+      const devices = result as unknown as Device[];
+      setAvailableDevices(devices);
+      if ((row.quantity || 1) === 1 && devices.length === 1) {
+        form.setFieldsValue({ deviceIds: [devices[0].id] });
+      }
     } catch (error) {
       setAvailableDevices([]);
       message.error((error as Error).message);
@@ -145,7 +149,12 @@ export function BorrowRequestsPage() {
     if (!action) return;
     try {
       if (action.type === 'pickup') {
-        await http.patch(`/borrow-requests/${action.row.id}/pickup`, values);
+        const pickupValues = { ...values };
+        const deviceIds = pickupValues.deviceIds as string[] | undefined;
+        if (!deviceIds?.length && (action.row.quantity || 1) === 1 && availableDevices.length === 1) {
+          pickupValues.deviceIds = [availableDevices[0].id];
+        }
+        await http.patch(`/borrow-requests/${action.row.id}/pickup`, pickupValues);
       } else if (action.type === 'cancel') {
         await http.patch(`/borrow-requests/${action.row.id}/cancel`);
       } else if (action.type === 'return') {
@@ -361,37 +370,22 @@ export function BorrowRequestsPage() {
                   type="info"
                   showIcon
                   message={`需要交付 ${action.row.quantity || 1} 台：${requestDeviceText(action.row)}`}
-                  description="不手动选择时，系统会自动分配可用设备；选择位置后会优先从该位置分配。"
+                  description="不手动选择时，系统会自动分配可用设备。"
+                  style={{ marginBottom: 16 }}
                 />
-                <Form.Item name="preferredLocation" label="优先位置">
+                <Form.Item name="deviceIds" label="选择设备">
                   <Select
-                    allowClear
-                    placeholder="不限位置"
-                    options={uniqueLocations(availableDevices).map((location) => ({ label: location, value: location }))}
+                    allowClear={!(availableDevices.length === 1 && (action.row.quantity || 1) === 1)}
+                    disabled={availableDevices.length === 1 && (action.row.quantity || 1) === 1}
+                    mode="multiple"
+                    placeholder="留空则自动分配"
+                    maxCount={action.row.quantity || 1}
+                    optionFilterProp="label"
+                    options={availableDevices.map((device) => ({
+                      label: `${device.name} / ${device.code} / ${device.location}`,
+                      value: device.id,
+                    }))}
                   />
-                </Form.Item>
-                <Form.Item shouldUpdate={(prev, current) => prev.preferredLocation !== current.preferredLocation} noStyle>
-                  {({ getFieldValue }) => {
-                    const preferredLocation = getFieldValue('preferredLocation');
-                    const filteredDevices = preferredLocation
-                      ? availableDevices.filter((device) => device.location === preferredLocation)
-                      : availableDevices;
-                    return (
-                      <Form.Item name="deviceIds" label="手动选择设备">
-                        <Select
-                          allowClear
-                          mode="multiple"
-                          placeholder="留空则自动分配"
-                          maxCount={action.row.quantity || 1}
-                          optionFilterProp="label"
-                          options={filteredDevices.map((device) => ({
-                            label: `${device.name} / ${device.code} / ${device.location}`,
-                            value: device.id,
-                          }))}
-                        />
-                      </Form.Item>
-                    );
-                  }}
                 </Form.Item>
               </>
             ) : action?.type === 'return' ? (
@@ -492,10 +486,6 @@ function renderBorrowItems(row: BorrowRequest) {
       ))}
     </Space>
   );
-}
-
-function uniqueLocations(devices: Device[]) {
-  return Array.from(new Set(devices.map((device) => device.location).filter(Boolean)));
 }
 
 function actionTitle(type?: Action) {

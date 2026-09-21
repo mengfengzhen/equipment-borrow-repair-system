@@ -134,7 +134,7 @@ export function DevicesPage() {
   };
 
   const normalizeBorrowRange = (range: [dayjs.Dayjs, dayjs.Dayjs]) => {
-    return [range[0].startOf('day'), range[1].endOf('day')] as [dayjs.Dayjs, dayjs.Dayjs];
+    return [range[0].format('YYYY-MM-DD'), range[1].format('YYYY-MM-DD')] as [string, string];
   };
 
   const loadBorrowOptionsForRange = async (range?: [dayjs.Dayjs, dayjs.Dayjs]) => {
@@ -143,8 +143,8 @@ export function DevicesPage() {
       const params = new URLSearchParams();
       if (range?.[0] && range?.[1]) {
         const normalized = normalizeBorrowRange(range);
-        params.set('borrowStartAt', normalized[0].toISOString());
-        params.set('borrowEndAt', normalized[1].toISOString());
+        params.set('borrowStartAt', normalized[0]);
+        params.set('borrowEndAt', normalized[1]);
       }
       const result = await http.get(`/devices/borrow-options${params.toString() ? `?${params.toString()}` : ''}`);
       const options = result as unknown as BorrowOption[];
@@ -254,8 +254,8 @@ export function DevicesPage() {
       await http.post('/borrow-requests', {
         deviceGroupKey: values.deviceGroupKey,
         quantity,
-        borrowStartAt: range[0].toISOString(),
-        borrowEndAt: range[1].toISOString(),
+        borrowStartAt: range[0],
+        borrowEndAt: range[1],
         purpose: values.purpose,
         remark: values.remark,
         attachmentNames: serializeAttachments(uploadedFiles),

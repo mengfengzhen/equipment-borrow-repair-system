@@ -1,5 +1,6 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
+import { parseBorrowDate } from '../common/borrow-date';
 import { activeBorrowStatuses, BorrowStatus, DeviceStatus, RepairStatus, Roles } from '../common/constants';
 import { RequestUser } from '../common/current-user.decorator';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
@@ -79,8 +80,8 @@ export class DevicesService {
   }
 
   async borrowOptions(query: BorrowOptionsQueryDto = {}) {
-    const start = query.borrowStartAt ? new Date(query.borrowStartAt) : undefined;
-    const end = query.borrowEndAt ? new Date(query.borrowEndAt) : undefined;
+    const start = query.borrowStartAt ? parseBorrowDate(query.borrowStartAt, 'start') : undefined;
+    const end = query.borrowEndAt ? parseBorrowDate(query.borrowEndAt, 'end') : undefined;
     const shouldApplySchedule = start && end && !Number.isNaN(start.getTime()) && !Number.isNaN(end.getTime()) && start < end;
     const devices = await this.prisma.device.findMany({
       where: {
