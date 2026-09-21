@@ -203,6 +203,49 @@ async function migrateLegacyBorrowRequests() {
   }
 }
 
+async function backfillRepairResultStatus() {
+  const { PrismaClient } = require('@prisma/client');
+  const prisma = new PrismaClient();
+
+  try {
+    const tables = await prisma.$queryRawUnsafe(
+      "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'RepairRecord'",
+    );
+    if (!tables.length) return;
+
+    const columns = await prisma.$queryRawUnsafe('PRAGMA table_info("RepairRecord")');
+    const columnNames = new Set(columns.map((column) => column.name));
+    if (!columnNames.has('repairResultStatus')) return;
+
+    await prisma.$executeRawUnsafe(`
+      UPDATE "RepairRecord"
+      SET "repairResultStatus" = (
+        SELECT CASE "AuditLog"."action"
+          WHEN 'UPDATE_REPAIR_STATUS_FIXED' THEN 'FIXED'
+          WHEN 'UPDATE_REPAIR_STATUS_UNREPAIRABLE' THEN 'UNREPAIRABLE'
+        END
+        FROM "AuditLog"
+        WHERE "AuditLog"."targetType" = 'REPAIR_RECORD'
+          AND "AuditLog"."targetId" = "RepairRecord"."id"
+          AND "AuditLog"."action" IN ('UPDATE_REPAIR_STATUS_FIXED', 'UPDATE_REPAIR_STATUS_UNREPAIRABLE')
+        ORDER BY "AuditLog"."createdAt" DESC
+        LIMIT 1
+      )
+      WHERE "RepairRecord"."repairResultStatus" IS NULL
+        AND "RepairRecord"."status" = 'WAITING_CONFIRM'
+        AND EXISTS (
+          SELECT 1
+          FROM "AuditLog"
+          WHERE "AuditLog"."targetType" = 'REPAIR_RECORD'
+            AND "AuditLog"."targetId" = "RepairRecord"."id"
+            AND "AuditLog"."action" IN ('UPDATE_REPAIR_STATUS_FIXED', 'UPDATE_REPAIR_STATUS_UNREPAIRABLE')
+        )
+    `);
+  } finally {
+    await prisma.$disconnect().catch(() => undefined);
+  }
+}
+
 async function main() {
   loadDotEnv();
   process.env.DATABASE_URL ||= 'file:./dev.db';
@@ -213,6 +256,7 @@ async function main() {
   mkdirSync(process.env.UPLOAD_DIR, { recursive: true });
   await migrateLegacyBorrowRequests();
   run('npx', ['prisma', 'db', 'push', '--skip-generate']);
+  await backfillRepairResultStatus();
 
   const { PrismaClient } = require('@prisma/client');
   const prisma = new PrismaClient();

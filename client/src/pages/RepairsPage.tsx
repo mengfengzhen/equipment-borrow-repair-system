@@ -131,7 +131,11 @@ export function RepairsPage() {
 
   const openConfirm = (row: RepairRecord) => {
     setConfirming(row);
-    confirmForm.setFieldsValue({ status: 'FIXED', result: row.result, location: row.device.location });
+    confirmForm.setFieldsValue({
+      status: row.repairResultStatus || 'FIXED',
+      result: row.result,
+      location: row.device.location,
+    });
   };
 
   const columns: ColumnsType<RepairRecord> = [
@@ -245,7 +249,8 @@ export function RepairsPage() {
           }}
           expandable={{ expandedRowRender: (row) => (
             <div>
-              <p>维修结果：{row.result || '-'}</p>
+              <p>维修结论：{row.repairResultStatus ? repairStatusNames[row.repairResultStatus] || row.repairResultStatus : '-'}</p>
+              <p>维修说明：{row.result || '-'}</p>
               <p>结束时间：{formatDateTime(row.repairEndAt)}</p>
               <p>关联借用：{row.borrowRequest ? `${row.borrowRequest.applicant.name} / ${row.borrowRequest.purpose}` : '-'}</p>
             </div>
@@ -276,6 +281,11 @@ export function RepairsPage() {
         destroyOnClose
       >
         <Form form={confirmForm} layout="vertical" onFinish={confirmRepair}>
+          {confirming?.repairResultStatus && (
+            <Typography.Paragraph>
+              维修人员提交结果：{repairStatusNames[confirming.repairResultStatus] || confirming.repairResultStatus}
+            </Typography.Paragraph>
+          )}
           <Form.Item name="status" label="验收结果" rules={[{ required: true, message: '请选择验收结果' }]}>
             <Select
               options={[

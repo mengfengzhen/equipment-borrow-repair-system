@@ -79,11 +79,13 @@ export class RepairsService {
 
     const terminal = ([RepairStatus.FIXED, RepairStatus.UNREPAIRABLE] as string[]).includes(dto.status);
     const nextStatus = terminal ? RepairStatus.WAITING_CONFIRM : dto.status;
+    const repairResultStatus = terminal ? dto.status : null;
     const updated = await this.prisma.$transaction(async (tx) => {
       const record = await tx.repairRecord.update({
         where: { id },
         data: {
           status: nextStatus,
+          repairResultStatus,
           result: dto.result,
           cost: dto.cost,
           repairEndAt: terminal ? new Date() : undefined,
@@ -161,6 +163,7 @@ export class RepairsService {
         data: {
           repairerId: user.id,
           status: RepairStatus.REPAIRING,
+          repairResultStatus: null,
           repairEndAt: null,
         },
       });

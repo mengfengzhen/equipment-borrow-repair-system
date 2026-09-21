@@ -31,18 +31,18 @@ model User {
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
-  department        Department?     @relation(fields: [departmentId], references: [id])
-  ownedDevices      Device[]        @relation("DeviceOwner")
-  borrowRequests    BorrowRequest[] @relation("BorrowApplicant")
+  department        Department?      @relation(fields: [departmentId], references: [id])
+  ownedDevices      Device[]         @relation("DeviceOwner")
+  borrowRequests    BorrowRequest[]  @relation("BorrowApplicant")
   approvals         BorrowApproval[]
-  repairAssignments RepairRecord[]  @relation("Repairer")
+  repairAssignments RepairRecord[]   @relation("Repairer")
   auditLogs         AuditLog[]
 }
 
 model Device {
-  id                 String   @id @default(cuid())
+  id                 String    @id @default(cuid())
   name               String
-  code               String   @unique
+  code               String    @unique
   type               String
   brand              String?
   model              String?
@@ -51,15 +51,15 @@ model Device {
   purchaseDate       DateTime?
   warrantyExpireDate DateTime?
   value              Float?
-  status             String   @default("AVAILABLE")
+  status             String    @default("AVAILABLE")
   description        String?
-  createdAt          DateTime @default(now())
-  updatedAt          DateTime @updatedAt
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
   deletedAt          DateTime?
 
-  owner          User?           @relation("DeviceOwner", fields: [ownerId], references: [id])
-  borrowItems    BorrowItem[]
-  repairRecords  RepairRecord[]
+  owner         User?          @relation("DeviceOwner", fields: [ownerId], references: [id])
+  borrowItems   BorrowItem[]
+  repairRecords RepairRecord[]
 }
 
 model SystemSetting {
@@ -70,12 +70,12 @@ model SystemSetting {
 }
 
 model BorrowRequest {
-  id               String   @id @default(cuid())
+  id               String    @id @default(cuid())
   requestedName    String
   requestedType    String
   requestedBrand   String?
   requestedModel   String?
-  quantity         Int      @default(1)
+  quantity         Int       @default(1)
   applicantId      String
   departmentId     String?
   borrowStartAt    DateTime
@@ -83,35 +83,35 @@ model BorrowRequest {
   purpose          String
   remark           String?
   attachmentNames  String?
-  status           String   @default("PENDING_APPROVAL")
-  approvalRequired Boolean  @default(true)
+  status           String    @default("PENDING_APPROVAL")
+  approvalRequired Boolean   @default(true)
   pickedUpAt       DateTime?
   returnedAt       DateTime?
   returnCondition  String?
   returnRemark     String?
   returnLocation   String?
-  createdAt        DateTime @default(now())
-  updatedAt        DateTime @updatedAt
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
 
-  applicant   User             @relation("BorrowApplicant", fields: [applicantId], references: [id])
-  department  Department?      @relation(fields: [departmentId], references: [id])
-  approvals   BorrowApproval[]
-  items       BorrowItem[]
-  repairs     RepairRecord[]
+  applicant  User             @relation("BorrowApplicant", fields: [applicantId], references: [id])
+  department Department?      @relation(fields: [departmentId], references: [id])
+  approvals  BorrowApproval[]
+  items      BorrowItem[]
+  repairs    RepairRecord[]
 }
 
 model BorrowItem {
-  id              String   @id @default(cuid())
+  id              String    @id @default(cuid())
   borrowRequestId String
   deviceId        String
-  status          String   @default("PICKED_UP")
+  status          String    @default("PICKED_UP")
   pickedUpAt      DateTime?
   returnedAt      DateTime?
   returnCondition String?
   returnRemark    String?
   returnLocation  String?
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
 
   borrowRequest BorrowRequest @relation(fields: [borrowRequestId], references: [id])
   device        Device        @relation(fields: [deviceId], references: [id])
@@ -134,18 +134,19 @@ model BorrowApproval {
 }
 
 model RepairRecord {
-  id               String   @id @default(cuid())
-  deviceId         String
-  borrowRequestId  String?
-  faultDescription String
-  repairerId       String?
-  repairStartAt    DateTime @default(now())
-  repairEndAt      DateTime?
-  cost             Float?
-  status           String   @default("WAITING_ACCEPT")
-  result           String?
-  createdAt        DateTime @default(now())
-  updatedAt        DateTime @updatedAt
+  id                 String    @id @default(cuid())
+  deviceId           String
+  borrowRequestId    String?
+  faultDescription   String
+  repairerId         String?
+  repairStartAt      DateTime  @default(now())
+  repairEndAt        DateTime?
+  cost               Float?
+  status             String    @default("WAITING_ACCEPT")
+  repairResultStatus String?
+  result             String?
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
 
   device        Device         @relation(fields: [deviceId], references: [id])
   borrowRequest BorrowRequest? @relation(fields: [borrowRequestId], references: [id])

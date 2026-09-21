@@ -347,6 +347,7 @@ async function main() {
       borrowRequestId: laptopBorrow.id,
       faultDescription: '历史异常归还记录：屏幕转轴异响，已完成维修留档。',
       status: 'FIXED',
+      repairResultStatus: 'FIXED',
       repairerId: repairer2.id,
       repairEndAt: new Date(Date.now() - 86400000),
       result: '更换转轴组件并通过开合测试。',

@@ -33,6 +33,7 @@ export type Device = {
   currentRepair?: {
     id: string;
     status: string;
+    repairResultStatus?: string;
     result?: string;
     repairer?: { id: string; name: string; username?: string };
   };
@@ -81,6 +82,7 @@ export type BorrowRequest = {
 export type RepairRecord = {
   id: string;
   status: string;
+  repairResultStatus?: string;
   faultDescription: string;
   result?: string;
   cost?: number;

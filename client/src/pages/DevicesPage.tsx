@@ -8,7 +8,7 @@ import { useSearchParams } from 'react-router-dom';
 import { http } from '../api/http';
 import { StatusTag } from '../components/StatusTag';
 import { deviceBrandOptions, deviceLocationOptions, deviceModelOptions, deviceTypeOptions } from '../constants/deviceOptions';
-import { deviceStatusNames } from '../types/enums';
+import { deviceStatusNames, repairStatusNames } from '../types/enums';
 import { BorrowRequest, Device, User } from '../types/models';
 import { formatDateRange, formatDateTime, money } from '../utils/format';
 import { serializeAttachments, uploadFiles } from '../utils/upload';
@@ -320,7 +320,7 @@ export function DevicesPage() {
                     onClick={() => {
                       setRepairConfirmDevice(row);
                       repairConfirmForm.setFieldsValue({
-                        status: 'FIXED',
+                        status: row.currentRepair?.repairResultStatus || 'FIXED',
                         result: row.currentRepair?.result,
                         location: row.location,
                       });
@@ -515,6 +515,11 @@ export function DevicesPage() {
         destroyOnClose
       >
         <Form form={repairConfirmForm} layout="vertical" onFinish={confirmRepairFromDevice}>
+          {repairConfirmDevice?.currentRepair?.repairResultStatus && (
+            <Typography.Paragraph>
+              维修人员提交结果：{repairStatusNames[repairConfirmDevice.currentRepair.repairResultStatus] || repairConfirmDevice.currentRepair.repairResultStatus}
+            </Typography.Paragraph>
+          )}
           <Form.Item name="status" label="验收结果" rules={[{ required: true, message: '请选择验收结果' }]}>
             <Select
               options={[

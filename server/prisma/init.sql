@@ -126,6 +126,7 @@ CREATE TABLE "RepairRecord" (
   "repairEndAt" DATETIME,
   "cost" REAL,
   "status" TEXT NOT NULL DEFAULT 'WAITING_ACCEPT',
+  "repairResultStatus" TEXT,
   "result" TEXT,
   "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   "updatedAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
