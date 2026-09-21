@@ -21,28 +21,28 @@ body {
   box-sizing: border-box;
   background:
     linear-gradient(90deg, rgba(247, 251, 255, 0.18) 0%, rgba(247, 251, 255, 0.34) 45%, rgba(247, 251, 255, 0.76) 100%),
-    url("./assets/login-bg.jpg") center / cover no-repeat;
+    url("./assets/login-bg.jpg") center 38% / cover no-repeat;
 }
 
 .login-hero {
   position: relative;
-  max-width: 520px;
-  padding: 18px 22px;
-  border: 1px solid rgba(213, 226, 244, 0.72);
+  max-width: 480px;
+  padding: 16px 20px;
+  border: 1px solid rgba(226, 237, 252, 0.48);
   border-radius: 8px;
-  background: rgba(255, 255, 255, 0.62);
-  box-shadow: 0 20px 54px rgba(65, 94, 134, 0.08);
-  backdrop-filter: blur(12px);
-  transform: translateY(-72px);
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.24), rgba(244, 249, 255, 0.14));
+  box-shadow: 0 14px 34px rgba(65, 94, 134, 0.04);
+  backdrop-filter: blur(3px);
+  transform: translateY(-88px);
 }
 
 .login-kicker {
   display: inline-flex;
-  margin-bottom: 12px;
+  margin-bottom: 10px;
   padding: 5px 11px;
   border: 1px solid #d7e2f2;
   border-radius: 999px;
-  background: rgba(255, 255, 255, 0.68);
+  background: rgba(255, 255, 255, 0.46);
   color: #4f8df7;
   font-size: 13px;
   letter-spacing: 0;
@@ -50,14 +50,14 @@ body {
 
 .login-hero h1.ant-typography {
   margin-bottom: 10px;
-  font-size: 36px;
+  font-size: 32px;
   line-height: 1.12;
   color: #15243a;
 }
 
 .login-hero .ant-typography {
-  font-size: 15px;
-  line-height: 1.58;
+  font-size: 14px;
+  line-height: 1.55;
   color: #53627a;
 }
 
@@ -201,6 +201,7 @@ body {
   background: rgba(255, 255, 255, 0.92);
   box-shadow: 0 24px 70px rgba(30, 47, 75, 0.18);
   backdrop-filter: blur(14px);
+  transform: translateX(-44px);
 }
 
 .login-card .ant-card-body {
@@ -1162,6 +1163,10 @@ body {
   }
 
   .login-hero {
+    transform: none;
+  }
+
+  .login-card {
     transform: none;
   }
 

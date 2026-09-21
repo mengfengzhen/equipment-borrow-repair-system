@@ -40,7 +40,8 @@ async function bootstrap() {
   );
   SwaggerModule.setup('docs', app, document);
 
-  const uploadsDir = config.get<string>('UPLOAD_DIR', join(process.cwd(), 'uploads'));
+  const defaultUploadsDir = existsSync('/data') ? '/data/uploads' : join(process.cwd(), 'uploads');
+  const uploadsDir = config.get<string>('UPLOAD_DIR', defaultUploadsDir);
   mkdirSync(uploadsDir, { recursive: true });
   app.useStaticAssets(uploadsDir, { prefix: '/uploads' });
 

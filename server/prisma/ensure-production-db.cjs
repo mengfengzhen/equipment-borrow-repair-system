@@ -41,9 +41,10 @@ async function main() {
   loadDotEnv();
   process.env.DATABASE_URL ||= 'file:./dev.db';
   process.env.JWT_SECRET ||= 'dev-secret';
-  process.env.UPLOAD_DIR ||= path.resolve(serverRoot, 'uploads');
+  process.env.UPLOAD_DIR ||= existsSync('/data') ? '/data/uploads' : path.resolve(serverRoot, 'uploads');
 
   ensureSqliteDirectory();
+  mkdirSync(process.env.UPLOAD_DIR, { recursive: true });
   run('npx', ['prisma', 'db', 'push', '--skip-generate']);
 
   const { PrismaClient } = require('@prisma/client');

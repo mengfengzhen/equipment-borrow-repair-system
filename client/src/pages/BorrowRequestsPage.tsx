@@ -225,7 +225,7 @@ export function BorrowRequestsPage() {
               <p>备注：{row.remark || '-'}</p>
               <p>附件：{renderAttachments(row.attachmentNames)}</p>
               <p>归还备注：{row.returnRemark || '-'}</p>
-              <p>审批记录：{row.approvals?.map((item) => `${item.approver.name} ${item.result}：${item.comment}`).join('；') || '-'}</p>
+              <div>审批记录：{renderApprovals(row.approvals)}</div>
             </div>
           ) }}
         />
@@ -354,6 +354,30 @@ function renderAttachments(value?: string) {
         ) : (
           <span key={file.name}>{file.name}</span>
         )
+      ))}
+    </Space>
+  );
+}
+
+function renderApprovals(approvals?: BorrowRequest['approvals']) {
+  if (!approvals?.length) return '-';
+
+  const resultNames: Record<string, string> = {
+    APPROVED: '通过',
+    REJECTED: '驳回',
+    NEED_MORE_INFO: '要求补充',
+  };
+
+  return (
+    <Space direction="vertical" size={4}>
+      {approvals.map((item) => (
+        <span key={item.id}>
+          {item.approver.name}（{item.approver.role === 'ADMIN' ? '管理员' : '部门负责人'}）
+          {resultNames[item.result] || item.result}
+          {' · '}
+          {formatDateTime(item.createdAt)}
+          ：{item.comment}
+        </span>
       ))}
     </Space>
   );

@@ -4,6 +4,7 @@ DROP TABLE IF EXISTS "AuditLog";
 DROP TABLE IF EXISTS "RepairRecord";
 DROP TABLE IF EXISTS "BorrowApproval";
 DROP TABLE IF EXISTS "BorrowRequest";
+DROP TABLE IF EXISTS "SystemSetting";
 DROP TABLE IF EXISTS "Device";
 DROP TABLE IF EXISTS "User";
 DROP TABLE IF EXISTS "Department";
@@ -49,7 +50,15 @@ CREATE TABLE "Device" (
   "description" TEXT,
   "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   "updatedAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  "deletedAt" DATETIME,
   CONSTRAINT "Device_ownerId_fkey" FOREIGN KEY ("ownerId") REFERENCES "User" ("id") ON DELETE SET NULL ON UPDATE CASCADE
+);
+
+CREATE TABLE "SystemSetting" (
+  "key" TEXT NOT NULL PRIMARY KEY,
+  "value" TEXT NOT NULL,
+  "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  "updatedAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
 CREATE TABLE "BorrowRequest" (
@@ -61,6 +70,7 @@ CREATE TABLE "BorrowRequest" (
   "borrowEndAt" DATETIME NOT NULL,
   "purpose" TEXT NOT NULL,
   "remark" TEXT,
+  "attachmentNames" TEXT,
   "status" TEXT NOT NULL DEFAULT 'PENDING_APPROVAL',
   "approvalRequired" BOOLEAN NOT NULL DEFAULT true,
   "pickedUpAt" DATETIME,

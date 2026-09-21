@@ -115,6 +115,7 @@ export class StatisticsService {
 
   async reports(query: { startAt?: string; endAt?: string; departmentId?: string; type?: string } = {}) {
     const now = new Date();
+    const hasOperationalScope = Boolean(query.startAt || query.endAt || query.departmentId);
     const timeWhere = {
       ...(query.startAt || query.endAt
         ? {
@@ -149,16 +150,12 @@ export class StatisticsService {
     const nextMonth = new Date(now.getFullYear(), now.getMonth() + 1, 1);
 
     const [
-      statusGroups,
-      typeGroups,
       departmentGroups,
       borrowRows,
       repairRows,
       monthlyRows,
       overdueRows,
     ] = await Promise.all([
-      this.prisma.device.groupBy({ by: ['status'], where: { deletedAt: null, ...deviceTypeWhere }, _count: true }),
-      this.prisma.device.groupBy({ by: ['type'], where: { deletedAt: null, ...deviceTypeWhere }, _count: true }),
       this.prisma.borrowRequest.groupBy({ by: ['departmentId'], where: borrowWhere, _count: true }),
       this.prisma.borrowRequest.findMany({
         where: borrowWhere,
@@ -190,12 +187,24 @@ export class StatisticsService {
       }),
     ]);
 
+    const [statusGroups, typeGroups] = hasOperationalScope
+      ? [
+          groupDevicesBy(borrowRows, repairRows, 'status'),
+          groupDevicesBy(borrowRows, repairRows, 'type'),
+        ]
+      : await Promise.all([
+          this.prisma.device.groupBy({ by: ['status'], where: { deletedAt: null, ...deviceTypeWhere }, _count: true })
+            .then((rows) => rows.map((item) => ({ name: item.status, count: item._count }))),
+          this.prisma.device.groupBy({ by: ['type'], where: { deletedAt: null, ...deviceTypeWhere }, _count: true })
+            .then((rows) => rows.map((item) => ({ name: item.type, count: item._count }))),
+        ]);
+
     const departments = await this.prisma.department.findMany({ select: { id: true, name: true } });
     const departmentNameMap = Object.fromEntries(departments.map((department) => [department.id, department.name]));
 
     return {
-      byStatus: statusGroups.map((item) => ({ name: item.status, count: item._count })),
-      byType: typeGroups.map((item) => ({ name: item.type, count: item._count })),
+      byStatus: statusGroups,
+      byType: typeGroups,
       byDepartment: departmentGroups.map((item) => ({
         name: item.departmentId ? departmentNameMap[item.departmentId] || '未知部门' : '未分配部门',
         count: item._count,
@@ -236,6 +245,24 @@ type RepairRankingRow = {
   cost: number | null;
   device: RankingDevice;
 };
+
+function groupDevicesBy(
+  borrowRows: BorrowRankingRow[],
+  repairRows: RepairRankingRow[],
+  field: 'status' | 'type',
+) {
+  const devices = new Map<string, RankingDevice>();
+  borrowRows.forEach((row) => devices.set(row.device.id, row.device));
+  repairRows.forEach((row) => devices.set(row.device.id, row.device));
+
+  const counts = new Map<string, number>();
+  devices.forEach((device) => {
+    const key = device[field] || '未分类';
+    counts.set(key, (counts.get(key) || 0) + 1);
+  });
+
+  return Array.from(counts.entries()).map(([name, count]) => ({ name, count }));
+}
 
 function topByDevice(
   borrowRows: BorrowRankingRow[],
