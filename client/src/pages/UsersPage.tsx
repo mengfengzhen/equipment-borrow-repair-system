@@ -111,7 +111,7 @@ export function UsersPage() {
 
   return (
     <div>
-      <div className="page-heading">
+      <div className="page-heading users-page-heading">
         <div>
           <Typography.Title level={2}>用户管理</Typography.Title>
           <Typography.Paragraph>查看系统账号列表，管理员和部门负责人可在此添加账号。</Typography.Paragraph>
