@@ -257,8 +257,8 @@ export function RepairsPage() {
               <p>处理状态：<StatusTag value={row.status} /></p>
               <p>维修结论：{row.repairResultStatus ? repairStatusNames[row.repairResultStatus] || row.repairResultStatus : '未提交最终结论'}</p>
               <p>处理说明：{row.result || '-'}</p>
-              <p>结束时间：{formatDateTime(row.repairEndAt)}</p>
-              <p>关联借用：{row.borrowRequest ? `${row.borrowRequest.applicant.name} / ${row.borrowRequest.purpose}` : '-'}</p>
+              {row.repairEndAt && <p>结束时间：{formatDateTime(row.repairEndAt)}</p>}
+              {row.borrowRequest && <p>关联借用：{row.borrowRequest.applicant.name} / {row.borrowRequest.purpose}</p>}
             </div>
           ) }}
         />
