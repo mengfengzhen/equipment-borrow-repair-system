@@ -3,7 +3,7 @@ import { Alert, Button, Card, DatePicker, Form, Input, Modal, Select, Space, Swi
 import { ColumnsType } from 'antd/es/table';
 import type { UploadFile } from 'antd/es/upload/interface';
 import dayjs from 'dayjs';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { http } from '../api/http';
 import { StatusTag } from '../components/StatusTag';
@@ -25,6 +25,7 @@ export function BorrowRequestsPage() {
   const [availableDevices, setAvailableDevices] = useState<Device[]>([]);
   const [form] = Form.useForm();
   const [filterForm] = Form.useForm();
+  const pickupLoadSeq = useRef(0);
   const [searchParams, setSearchParams] = useSearchParams();
   const user = JSON.parse(localStorage.getItem('user') || '{}') as User;
   const statusFilter = searchParams.get('status');
@@ -52,14 +53,12 @@ export function BorrowRequestsPage() {
       http.get('/settings'),
       http.get('/departments'),
       user.role === 'ADMIN' ? http.get('/users') : Promise.resolve([]),
-      user.role === 'ADMIN' ? http.get('/devices?status=AVAILABLE') : Promise.resolve([]),
     ])
-      .then(([borrowRes, settingRes, departmentRes, userRes, deviceRes]) => {
+      .then(([borrowRes, settingRes, departmentRes, userRes]) => {
         setRows(borrowRes as unknown as BorrowRequest[]);
         setSettings(settingRes as unknown as { approvalRequired: boolean });
         setDepartments(departmentRes as unknown as Department[]);
         setUsers(userRes as unknown as User[]);
-        setAvailableDevices(deviceRes as unknown as Device[]);
       })
       .catch((error) => message.error((error as Error).message));
   };
@@ -106,10 +105,11 @@ export function BorrowRequestsPage() {
     }
   };
 
-  const loadPickupDevices = async (row: BorrowRequest) => {
+  const loadPickupDevices = async (row: BorrowRequest, seq: number) => {
     if (user.role !== 'ADMIN') return;
     try {
       const result = await http.get(`/borrow-requests/${row.id}/available-devices`);
+      if (seq !== pickupLoadSeq.current) return;
       const devices = result as unknown as Device[];
       setAvailableDevices(devices);
       if ((row.quantity || 1) === 1 && devices.length === 1) {
@@ -118,19 +118,30 @@ export function BorrowRequestsPage() {
         form.setFieldsValue({ deviceIds: undefined });
       }
     } catch (error) {
+      if (seq !== pickupLoadSeq.current) return;
       setAvailableDevices([]);
       message.error((error as Error).message);
     }
   };
 
+  const closeAction = () => {
+    pickupLoadSeq.current += 1;
+    setAction(undefined);
+    setAvailableDevices([]);
+    form.resetFields();
+  };
+
   const openAction = (type: Action, row: BorrowRequest) => {
+    const seq = pickupLoadSeq.current + 1;
+    pickupLoadSeq.current = seq;
     form.resetFields();
     setAvailableDevices([]);
+    setAction({ type, row });
     if (type === 'supplement') {
       form.setFieldsValue({ purpose: row.purpose, remark: row.remark });
     }
     if (type === 'pickup') {
-      loadPickupDevices(row);
+      void loadPickupDevices(row, seq);
     }
     if (type === 'return') {
       const returnItems = (row.items || []).map((item) => ({
@@ -144,7 +155,6 @@ export function BorrowRequestsPage() {
         items: returnItems,
       });
     }
-    setAction({ type, row });
   };
 
   const submitAction = async (values: Record<string, unknown>) => {
@@ -156,7 +166,11 @@ export function BorrowRequestsPage() {
         if (!deviceIds?.length && (action.row.quantity || 1) === 1 && availableDevices.length === 1) {
           pickupValues.deviceIds = [availableDevices[0].id];
         }
-        await http.patch(`/borrow-requests/${action.row.id}/pickup`, pickupValues);
+        const updated = await http.patch(`/borrow-requests/${action.row.id}/pickup`, pickupValues) as unknown as BorrowRequest;
+        setRows((currentRows) => {
+          const nextRows = currentRows.map((row) => row.id === action.row.id ? { ...row, ...updated } : row);
+          return statusFilter === 'APPROVED' ? nextRows.filter((row) => row.id !== action.row.id) : nextRows;
+        });
       } else if (action.type === 'cancel') {
         await http.patch(`/borrow-requests/${action.row.id}/cancel`);
       } else if (action.type === 'return') {
@@ -173,8 +187,7 @@ export function BorrowRequestsPage() {
         await http.patch(`/borrow-requests/${action.row.id}/${action.type}`, values);
       }
       message.success('操作成功');
-      setAction(undefined);
-      form.resetFields();
+      closeAction();
       load();
     } catch (error) {
       message.error((error as Error).message);
@@ -339,7 +352,7 @@ export function BorrowRequestsPage() {
       <Modal
         title={actionTitle(action?.type)}
         open={Boolean(action)}
-        onCancel={() => setAction(undefined)}
+        onCancel={closeAction}
         onOk={() => action?.type === 'cancel' ? submitAction({}) : form.submit()}
         destroyOnClose
       >
@@ -448,8 +461,15 @@ export function BorrowRequestsPage() {
                             <Form.Item name={[field.name, 'returnRemark']} label="归还备注" rules={[{ required: true, message: '请填写归还备注' }]}>
                               <Input.TextArea rows={2} />
                             </Form.Item>
-                            <Form.Item name={[field.name, 'reportRepair']} label="是否报修" valuePropName="checked">
-                              <Switch />
+                            <Form.Item shouldUpdate={(prev, current) => prev.items?.[index]?.returnCondition !== current.items?.[index]?.returnCondition} noStyle>
+                              {({ getFieldValue }) => {
+                                const condition = getFieldValue(['items', index, 'returnCondition']);
+                                return (
+                                  <Form.Item name={[field.name, 'reportRepair']} label="是否报修" valuePropName="checked">
+                                    <Switch disabled={condition !== 'NORMAL'} />
+                                  </Form.Item>
+                                );
+                              }}
                             </Form.Item>
                             <Form.Item shouldUpdate={(prev, current) => prev.items?.[index]?.reportRepair !== current.items?.[index]?.reportRepair} noStyle>
                               {({ getFieldValue }) => getFieldValue(['items', index, 'reportRepair']) ? (

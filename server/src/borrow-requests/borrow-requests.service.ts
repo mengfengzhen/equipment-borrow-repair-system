@@ -363,6 +363,7 @@ export class BorrowRequestsService {
       });
 
       for (const item of returnItems) {
+        const needsRepair = item.reportRepair || item.returnCondition !== ReturnCondition.NORMAL;
         await tx.borrowItem.update({
           where: { id: item.itemId },
           data: {
@@ -373,7 +374,7 @@ export class BorrowRequestsService {
             returnLocation: item.returnLocation,
           },
         });
-        if (item.reportRepair) {
+        if (needsRepair) {
           await tx.device.update({
             where: { id: item.deviceId },
             data: { status: DeviceStatus.REPAIRING, location: item.returnLocation },
