@@ -1,9 +1,8 @@
-import { BadRequestException, Injectable, UnauthorizedException } from '@nestjs/common';
+import { Injectable, UnauthorizedException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcryptjs';
-import { Roles } from '../common/constants';
 import { PrismaService } from '../prisma/prisma.service';
-import { LoginDto, RegisterDto } from './dto';
+import { LoginDto } from './dto';
 
 @Injectable()
 export class AuthService {
@@ -42,33 +41,6 @@ export class AuthService {
         department: user.department?.name,
       },
     };
-  }
-
-  async register(dto: RegisterDto) {
-    const exists = await this.prisma.user.findUnique({ where: { username: dto.username } });
-    if (exists) {
-      throw new BadRequestException('账号已存在');
-    }
-
-    const department = await this.prisma.department.findUnique({ where: { id: dto.departmentId } });
-    if (!department) {
-      throw new BadRequestException('部门不存在');
-    }
-
-    const passwordHash = await bcrypt.hash(dto.password, 10);
-    await this.prisma.user.create({
-      data: {
-        username: dto.username,
-        passwordHash,
-        name: dto.name,
-        role: Roles.USER,
-        departmentId: dto.departmentId,
-        phone: dto.phone,
-        email: dto.email,
-      },
-    });
-
-    return this.login({ username: dto.username, password: dto.password });
   }
 
   async departments() {

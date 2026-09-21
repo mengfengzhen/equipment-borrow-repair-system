@@ -1,4 +1,4 @@
-import { EditOutlined } from '@ant-design/icons';
+import { PlusOutlined } from '@ant-design/icons';
 import { Button, Card, Form, Input, Modal, Select, Space, Switch, Table, Tag, Typography, message } from 'antd';
 import { useEffect, useMemo, useState } from 'react';
 import { http } from '../api/http';
@@ -24,11 +24,14 @@ function getDepartmentName(user: User) {
 export function UsersPage() {
   const [users, setUsers] = useState<User[]>([]);
   const [departments, setDepartments] = useState<Department[]>([]);
-  const [editingUser, setEditingUser] = useState<User | null>(null);
+  const [createOpen, setCreateOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [form] = Form.useForm();
   const [filterForm] = Form.useForm();
+  const currentUser = JSON.parse(localStorage.getItem('user') || '{}') as User;
+  const isManager = currentUser.role === 'MANAGER';
+  const currentDepartmentId = getDepartmentId(currentUser);
 
   const departmentOptions = useMemo(
     () => departments.map((department) => ({ label: department.name, value: department.id })),
@@ -79,27 +82,24 @@ export function UsersPage() {
     loadData();
   }, []);
 
-  const openEdit = (user: User) => {
-    setEditingUser(user);
+  const openCreate = () => {
+    form.resetFields();
     form.setFieldsValue({
-      name: user.name,
-      role: user.role,
-      departmentId: getDepartmentId(user),
-      phone: user.phone,
-      email: user.email,
-      active: user.active !== false,
+      role: 'USER',
+      departmentId: isManager ? currentDepartmentId : undefined,
+      active: true,
     });
+    setCreateOpen(true);
   };
 
-  const saveUser = async () => {
+  const createUser = async () => {
     const values = await form.validateFields();
-    if (!editingUser) return;
 
     setSaving(true);
     try {
-      await http.patch(`/users/${editingUser.id}`, values);
-      message.success('用户权限已更新');
-      setEditingUser(null);
+      await http.post('/users', values);
+      message.success('账号已添加');
+      setCreateOpen(false);
       form.resetFields();
       loadData();
     } catch (error) {
@@ -112,8 +112,13 @@ export function UsersPage() {
   return (
     <div>
       <div className="page-heading">
-        <Typography.Title level={2}>用户管理</Typography.Title>
-        <Typography.Paragraph>新注册用户默认普通员工，管理员统一维护角色、部门和账号状态。</Typography.Paragraph>
+        <div>
+          <Typography.Title level={2}>用户管理</Typography.Title>
+          <Typography.Paragraph>查看系统账号列表，管理员和部门负责人可在此添加账号。</Typography.Paragraph>
+        </div>
+        <Button type="primary" icon={<PlusOutlined />} onClick={openCreate}>
+          添加账号
+        </Button>
       </div>
 
       <Card className="table-card">
@@ -183,41 +188,38 @@ export function UsersPage() {
                 <Tag color={active === false ? 'default' : 'green'}>{active === false ? '停用' : '启用'}</Tag>
               ),
             },
-            {
-              title: '操作',
-              width: 150,
-              render: (_, user) => (
-                <Button icon={<EditOutlined />} onClick={() => openEdit(user)}>
-                  编辑权限
-                </Button>
-              ),
-            },
           ]}
         />
       </Card>
 
       <Modal
-        title="编辑用户权限"
-        open={Boolean(editingUser)}
+        title="添加账号"
+        open={createOpen}
         onCancel={() => {
-          setEditingUser(null);
+          setCreateOpen(false);
           form.resetFields();
         }}
-        onOk={saveUser}
+        onOk={createUser}
         confirmLoading={saving}
-        okText="保存"
+        okText="添加"
         cancelText="取消"
         destroyOnHidden
       >
         <Form form={form} layout="vertical">
+          <Form.Item name="username" label="账号" rules={[{ required: true, message: '请输入账号' }]}>
+            <Input placeholder="建议使用工号或姓名拼音" />
+          </Form.Item>
+          <Form.Item name="password" label="初始密码" rules={[{ required: true, min: 6, message: '密码至少 6 位' }]}>
+            <Input.Password placeholder="至少 6 位" />
+          </Form.Item>
           <Form.Item name="name" label="姓名" rules={[{ required: true, message: '请输入姓名' }]}>
             <Input />
           </Form.Item>
           <Form.Item name="role" label="角色" rules={[{ required: true, message: '请选择角色' }]}>
-            <Select options={roleOptions} />
+            <Select disabled={isManager} options={isManager ? roleOptions.filter((item) => item.value === 'USER') : roleOptions} />
           </Form.Item>
           <Form.Item name="departmentId" label="部门" rules={[{ required: true, message: '请选择部门' }]}>
-            <Select options={departmentOptions} />
+            <Select disabled={isManager} options={departmentOptions} />
           </Form.Item>
           <Form.Item name="phone" label="手机号">
             <Input />
@@ -229,7 +231,7 @@ export function UsersPage() {
             <Switch checkedChildren="启用" unCheckedChildren="停用" />
           </Form.Item>
           <Typography.Paragraph className="modal-helper-text" type="secondary">
-            普通员工可自助注册；部门负责人、维修人员和管理员由管理员分配，避免用户自行提升权限。
+            {isManager ? '部门负责人只能添加本部门普通员工账号。' : '管理员可以添加普通员工、部门负责人、维修人员和管理员账号。'}
           </Typography.Paragraph>
         </Form>
       </Modal>

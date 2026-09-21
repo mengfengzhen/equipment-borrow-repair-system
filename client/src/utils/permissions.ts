@@ -4,7 +4,7 @@ export type MenuKey = '/' | '/devices' | '/borrows' | '/repairs' | '/reports' | 
 
 const roleMenus: Record<string, MenuKey[]> = {
   ADMIN: ['/', '/devices', '/borrows', '/repairs', '/reports', '/users', '/logs'],
-  MANAGER: ['/', '/devices', '/borrows'],
+  MANAGER: ['/', '/devices', '/borrows', '/users'],
   USER: ['/', '/devices', '/borrows'],
   REPAIRER: ['/', '/devices', '/repairs'],
 };
