@@ -114,6 +114,8 @@ export function BorrowRequestsPage() {
       setAvailableDevices(devices);
       if ((row.quantity || 1) === 1 && devices.length === 1) {
         form.setFieldsValue({ deviceIds: [devices[0].id] });
+      } else {
+        form.setFieldsValue({ deviceIds: undefined });
       }
     } catch (error) {
       setAvailableDevices([]);
@@ -370,15 +372,29 @@ export function BorrowRequestsPage() {
                   type="info"
                   showIcon
                   message={`需要交付 ${action.row.quantity || 1} 台：${requestDeviceText(action.row)}`}
-                  description="不手动选择时，系统会自动分配可用设备。"
                   style={{ marginBottom: 16 }}
                 />
-                <Form.Item name="deviceIds" label="选择设备">
+                <Form.Item
+                  name="deviceIds"
+                  label="选择设备"
+                  rules={[
+                    {
+                      validator: (_, value?: string[]) => {
+                        const quantity = action.row.quantity || 1;
+                        const isSingleAutoSelected = quantity === 1 && availableDevices.length === 1;
+                        if (isSingleAutoSelected) return Promise.resolve();
+                        if (!value?.length) return Promise.reject(new Error('请选择交付设备'));
+                        if (value.length !== quantity) return Promise.reject(new Error(`需要选择 ${quantity} 台设备`));
+                        return Promise.resolve();
+                      },
+                    },
+                  ]}
+                >
                   <Select
-                    allowClear={!(availableDevices.length === 1 && (action.row.quantity || 1) === 1)}
-                    disabled={availableDevices.length === 1 && (action.row.quantity || 1) === 1}
+                    allowClear
                     mode="multiple"
-                    placeholder="留空则自动分配"
+                    showSearch
+                    placeholder="搜索编号 / 名称 / 位置选择设备"
                     maxCount={action.row.quantity || 1}
                     optionFilterProp="label"
                     options={availableDevices.map((device) => ({
