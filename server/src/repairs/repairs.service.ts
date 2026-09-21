@@ -35,21 +35,13 @@ export class RepairsService {
     if (([DeviceStatus.SCRAPPED, DeviceStatus.DISABLED] as string[]).includes(device.status)) {
       throw new BadRequestException('报废或停用设备不能创建维修任务');
     }
-    if (dto.repairerId) {
-      const repairer = await this.prisma.user.findUnique({ where: { id: dto.repairerId } });
-      if (!repairer || repairer.role !== Roles.REPAIRER) {
-        throw new BadRequestException('维修人员不存在');
-      }
-    }
-
     const repair = await this.prisma.$transaction(async (tx) => {
       await tx.device.update({ where: { id: dto.deviceId }, data: { status: DeviceStatus.REPAIRING } });
       return tx.repairRecord.create({
         data: {
           deviceId: dto.deviceId,
-          repairerId: dto.repairerId,
           faultDescription: dto.faultDescription,
-          status: dto.repairerId ? RepairStatus.REPAIRING : RepairStatus.WAITING_ACCEPT,
+          status: RepairStatus.WAITING_ACCEPT,
         },
       });
     });

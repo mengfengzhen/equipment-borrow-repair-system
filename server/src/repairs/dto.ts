@@ -23,10 +23,6 @@ export class CreateRepairDto {
   @IsString()
   @MinLength(2)
   faultDescription!: string;
-
-  @IsOptional()
-  @IsString()
-  repairerId?: string;
 }
 
 export class UpdateRepairStatusDto {

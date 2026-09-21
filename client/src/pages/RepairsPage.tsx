@@ -127,6 +127,11 @@ export function RepairsPage() {
   const openUpdate = (row: RepairRecord) => {
     setCurrent(row);
     form.resetFields();
+    form.setFieldsValue({
+      status: editableRepairStatus(row.status) ? row.status : undefined,
+      result: row.result,
+      cost: row.cost,
+    });
   };
 
   const openConfirm = (row: RepairRecord) => {
@@ -249,15 +254,19 @@ export function RepairsPage() {
           }}
           expandable={{ expandedRowRender: (row) => (
             <div>
-              <p>维修结论：{row.repairResultStatus ? repairStatusNames[row.repairResultStatus] || row.repairResultStatus : '-'}</p>
-              <p>维修说明：{row.result || '-'}</p>
+              <p>处理状态：<StatusTag value={row.status} /></p>
+              <p>维修结论：{row.repairResultStatus ? repairStatusNames[row.repairResultStatus] || row.repairResultStatus : '未提交最终结论'}</p>
+              <p>处理说明：{row.result || '-'}</p>
               <p>结束时间：{formatDateTime(row.repairEndAt)}</p>
               <p>关联借用：{row.borrowRequest ? `${row.borrowRequest.applicant.name} / ${row.borrowRequest.purpose}` : '-'}</p>
             </div>
           ) }}
         />
       </div>
-      <Modal title="填写维修处理结果" open={Boolean(current)} onCancel={() => setCurrent(undefined)} onOk={() => form.submit()} destroyOnClose>
+      <Modal title="填写维修处理结果" open={Boolean(current)} onCancel={() => {
+        setCurrent(undefined);
+        form.resetFields();
+      }} onOk={() => form.submit()} destroyOnClose>
         <Form form={form} layout="vertical" onFinish={update}>
           <Form.Item name="status" label="维修状态" rules={[{ required: true }]}>
             <Select
@@ -269,7 +278,9 @@ export function RepairsPage() {
               ]}
             />
           </Form.Item>
-          <Form.Item name="result" label="维修结果"><Input.TextArea rows={3} /></Form.Item>
+          <Form.Item name="result" label="处理说明" rules={[{ required: true, message: '请填写处理说明' }]}>
+            <Input.TextArea rows={3} placeholder="例如：缺少配件，等待采购；已更换模块并测试通过等" />
+          </Form.Item>
           <Form.Item name="cost" label="维修费用"><InputNumber style={{ width: '100%' }} /></Form.Item>
         </Form>
       </Modal>
@@ -322,17 +333,6 @@ export function RepairsPage() {
                 }))}
             />
           </Form.Item>
-          <Form.Item name="repairerId" label="维修人员">
-            <Select
-              allowClear
-              showSearch
-              placeholder="可先不分配，由维修人员接单"
-              optionFilterProp="label"
-              options={users
-                .filter((item) => item.role === 'REPAIRER')
-                .map((item) => ({ label: `${item.name} / ${item.username}`, value: item.id }))}
-            />
-          </Form.Item>
           <Form.Item name="faultDescription" label="故障描述" rules={[{ required: true, message: '请填写故障描述' }]}>
             <Input.TextArea rows={4} placeholder="例如：开机无反应、接口松动、归还时发现配件缺失等" />
           </Form.Item>
@@ -356,4 +356,8 @@ function repairConfirmStatus(repair: Pick<RepairRecord, 'repairResultStatus' | '
   }
 
   return undefined;
+}
+
+function editableRepairStatus(status: string) {
+  return ['WAITING_PARTS', 'FIXED', 'UNREPAIRABLE'].includes(status);
 }
