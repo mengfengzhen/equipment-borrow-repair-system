@@ -292,7 +292,7 @@ export function DevicesPage() {
     { title: '位置', dataIndex: 'location' },
     { title: '保管人/使用者', render: (_, row) => getKeeperName(row) },
     { title: '价值', render: (_, row) => money(row.value) },
-    { title: '状态', render: (_, row) => <StatusTag value={row.status} /> },
+    { title: '状态', render: (_, row) => <StatusTag value={row.status} label={deviceStatusLabel(row.status, user.role)} /> },
     {
       title: '操作',
       width: 320,
@@ -552,7 +552,7 @@ export function DevicesPage() {
             <Descriptions bordered column={2} size="small">
               <Descriptions.Item label="设备编号">{detailOpen.device.code}</Descriptions.Item>
               <Descriptions.Item label="设备名称">{detailOpen.device.name}</Descriptions.Item>
-              <Descriptions.Item label="当前状态">{deviceStatusNames[detailOpen.device.status] || detailOpen.device.status}</Descriptions.Item>
+              <Descriptions.Item label="当前状态">{deviceStatusLabel(detailOpen.device.status, user.role)}</Descriptions.Item>
               <Descriptions.Item label="是否可申请">{detailOpen.device.status === 'AVAILABLE' ? '可申请' : '不可申请'}</Descriptions.Item>
               <Descriptions.Item label="类型">{detailOpen.device.type}</Descriptions.Item>
               <Descriptions.Item label="品牌型号">{`${detailOpen.device.brand || '-'} ${detailOpen.device.model || ''}`}</Descriptions.Item>
@@ -711,6 +711,13 @@ function getKeeperName(device: Device) {
     return `${device.currentBorrower.name}（当前使用）`;
   }
   return device.owner?.name || '-';
+}
+
+function deviceStatusLabel(status: string, role: string) {
+  if (role === 'USER' && status === 'BORROWED') {
+    return '使用中';
+  }
+  return deviceStatusNames[status] || status;
 }
 
 function buildOwnerOptions(users: User[], currentUser: User) {
