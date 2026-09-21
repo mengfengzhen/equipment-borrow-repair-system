@@ -63,7 +63,7 @@ export function AuditLogsPage() {
   const columns: ColumnsType<AuditLog> = [
     { title: '操作人', width: 140, render: (_, row) => row.actor?.name || '系统' },
     { title: '动作', dataIndex: 'action', width: 280, render: (value) => <span className="table-cell-ellipsis">{formatAuditAction(value)}</span> },
-    { title: '对象', width: 220, render: (_, row) => formatAuditTarget(row.targetType, row.targetId) },
+    { title: '场景', width: 220, render: (_, row) => formatAuditTarget(row.targetType, row.targetId) },
     { title: '时间', width: 170, render: (_, row) => formatDateTime(row.createdAt) },
     { title: '详情', render: (_, row) => <span className="table-cell-ellipsis">{formatLogDetail(row)}</span> },
   ];
@@ -89,8 +89,8 @@ export function AuditLogsPage() {
           <Form.Item name="action" label="动作">
             <Select allowClear showSearch placeholder="全部动作" optionFilterProp="label" options={actionOptions} style={{ width: 190 }} />
           </Form.Item>
-          <Form.Item name="targetType" label="对象">
-            <Select allowClear placeholder="全部对象" options={targetOptions} style={{ width: 140 }} />
+          <Form.Item name="targetType" label="场景">
+            <Select allowClear placeholder="全部场景" options={targetOptions} style={{ width: 140 }} />
           </Form.Item>
           <Form.Item name="range" label="操作时间">
             <DatePicker.RangePicker style={{ width: 260 }} />
