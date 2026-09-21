@@ -377,7 +377,7 @@ export class BorrowRequestsService {
         if (needsRepair) {
           await tx.device.update({
             where: { id: item.deviceId },
-            data: { status: DeviceStatus.REPAIRING, location: item.returnLocation },
+            data: { status: DeviceStatus.WAITING_REPAIR, location: item.returnLocation },
           });
           await tx.repairRecord.create({
             data: {
@@ -445,7 +445,7 @@ export class BorrowRequestsService {
       if (!device) {
         throw new NotFoundException('设备不存在');
       }
-      if (([DeviceStatus.DISABLED, DeviceStatus.SCRAPPED, DeviceStatus.REPAIRING] as string[]).includes(device.status)) {
+      if (([DeviceStatus.DISABLED, DeviceStatus.SCRAPPED, DeviceStatus.WAITING_REPAIR, DeviceStatus.REPAIRING] as string[]).includes(device.status)) {
         throw new BadRequestException('该设备当前不可申请借用');
       }
       return device;
@@ -457,7 +457,7 @@ export class BorrowRequestsService {
     const devices = await this.prisma.device.findMany({
       where: {
         deletedAt: null,
-        status: { notIn: [DeviceStatus.DISABLED, DeviceStatus.SCRAPPED, DeviceStatus.REPAIRING] },
+        status: { notIn: [DeviceStatus.DISABLED, DeviceStatus.SCRAPPED, DeviceStatus.WAITING_REPAIR, DeviceStatus.REPAIRING] },
       },
       orderBy: { createdAt: 'asc' },
     });
@@ -495,7 +495,7 @@ export class BorrowRequestsService {
     const devices = await this.prisma.device.findMany({
       where: {
         deletedAt: null,
-        status: { notIn: [DeviceStatus.DISABLED, DeviceStatus.SCRAPPED, DeviceStatus.REPAIRING] },
+        status: { notIn: [DeviceStatus.DISABLED, DeviceStatus.SCRAPPED, DeviceStatus.WAITING_REPAIR, DeviceStatus.REPAIRING] },
       },
     });
     const total = devices.filter((device) => buildDeviceGroupKey(device) === groupKey).length;

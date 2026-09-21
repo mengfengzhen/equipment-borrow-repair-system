@@ -128,6 +128,7 @@ export function DashboardPage() {
     { label: '可用', value: Number(statusCountMap.AVAILABLE || 0), color: '#20b26b' },
     { label: '审批/待领取', value: Number(statusCountMap.BORROW_PENDING || 0) + Number(statusCountMap.RESERVED || 0), color: '#6aa2ff' },
     { label: '借出', value: Number(statusCountMap.BORROWED || 0), color: '#8b5cf6' },
+    { label: '待维修', value: Number(statusCountMap.WAITING_REPAIR || 0), color: '#facc15' },
     { label: '维修中', value: Number(statusCountMap.REPAIRING || 0), color: '#f97316' },
     { label: '停用/报废', value: Number(statusCountMap.DISABLED || 0) + Number(statusCountMap.SCRAPPED || 0), color: '#94a3b8' },
   ];

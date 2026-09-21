@@ -32,11 +32,11 @@ export class RepairsService {
   async create(dto: CreateRepairDto, user: RequestUser) {
     const device = await this.prisma.device.findUnique({ where: { id: dto.deviceId } });
     if (!device) throw new NotFoundException('设备不存在');
-    if (([DeviceStatus.SCRAPPED, DeviceStatus.DISABLED] as string[]).includes(device.status)) {
-      throw new BadRequestException('报废或停用设备不能创建维修任务');
+    if (device.status !== DeviceStatus.AVAILABLE) {
+      throw new BadRequestException('只有可用设备可以手动创建维修任务');
     }
     const repair = await this.prisma.$transaction(async (tx) => {
-      await tx.device.update({ where: { id: dto.deviceId }, data: { status: DeviceStatus.REPAIRING } });
+      await tx.device.update({ where: { id: dto.deviceId }, data: { status: DeviceStatus.WAITING_REPAIR } });
       return tx.repairRecord.create({
         data: {
           deviceId: dto.deviceId,

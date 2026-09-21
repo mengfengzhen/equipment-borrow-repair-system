@@ -300,8 +300,8 @@ export function DevicesPage() {
         const activeBorrow = activeBorrowByDevice[row.id];
         const hasActiveBorrow = Boolean(activeBorrow);
         const disableButtonText = row.status === 'DISABLED' ? '已停用' : '停用';
-        const disableUnavailable = ['BORROW_PENDING', 'RESERVED', 'BORROWED', 'DISABLED', 'SCRAPPED'].includes(row.status);
-        const scrapUnavailable = ['BORROW_PENDING', 'RESERVED', 'BORROWED', 'DISABLED', 'SCRAPPED'].includes(row.status);
+        const disableUnavailable = ['BORROW_PENDING', 'RESERVED', 'BORROWED', 'WAITING_REPAIR', 'REPAIRING', 'DISABLED', 'SCRAPPED'].includes(row.status);
+        const scrapUnavailable = ['BORROW_PENDING', 'RESERVED', 'BORROWED', 'WAITING_REPAIR', 'REPAIRING', 'DISABLED', 'SCRAPPED'].includes(row.status);
 
         return (
           <div className="device-action-grid">
@@ -361,14 +361,14 @@ export function DevicesPage() {
                   okText="确认删除"
                   cancelText="取消"
                   okButtonProps={{ danger: true }}
-                  disabled={['BORROW_PENDING', 'RESERVED', 'BORROWED', 'REPAIRING'].includes(row.status)}
+                  disabled={['BORROW_PENDING', 'RESERVED', 'BORROWED', 'WAITING_REPAIR', 'REPAIRING'].includes(row.status)}
                   onConfirm={() => http.delete(`/devices/${row.id}`).then(load).then(() => message.success('设备已删除')).catch((error) => message.error((error as Error).message))}
                 >
                   <Button
                     className="table-action-button"
                     icon={<DeleteOutlined />}
                     danger
-                    disabled={['BORROW_PENDING', 'RESERVED', 'BORROWED', 'REPAIRING'].includes(row.status)}
+                    disabled={['BORROW_PENDING', 'RESERVED', 'BORROWED', 'WAITING_REPAIR', 'REPAIRING'].includes(row.status)}
                   >
                     删除
                   </Button>

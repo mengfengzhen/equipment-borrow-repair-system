@@ -87,7 +87,7 @@ export class DevicesService {
       where: {
         deletedAt: null,
         status: shouldApplySchedule
-          ? { notIn: [DeviceStatus.DISABLED, DeviceStatus.SCRAPPED, DeviceStatus.REPAIRING] }
+          ? { notIn: [DeviceStatus.DISABLED, DeviceStatus.SCRAPPED, DeviceStatus.WAITING_REPAIR, DeviceStatus.REPAIRING] }
           : DeviceStatus.AVAILABLE,
       },
       orderBy: [{ type: 'asc' }, { brand: 'asc' }, { model: 'asc' }, { name: 'asc' }],
@@ -221,8 +221,15 @@ export class DevicesService {
     if (!([Roles.ADMIN] as string[]).includes(user.role)) {
       throw new BadRequestException('只有管理员可以变更设备状态');
     }
-    if (device.status === DeviceStatus.BORROWED && ([DeviceStatus.DISABLED, DeviceStatus.SCRAPPED] as string[]).includes(status)) {
-      throw new BadRequestException('借出中的设备不能直接停用或报废');
+    const protectedStatuses = [
+      DeviceStatus.BORROW_PENDING,
+      DeviceStatus.RESERVED,
+      DeviceStatus.BORROWED,
+      DeviceStatus.WAITING_REPAIR,
+      DeviceStatus.REPAIRING,
+    ] as string[];
+    if (protectedStatuses.includes(device.status) && ([DeviceStatus.DISABLED, DeviceStatus.SCRAPPED] as string[]).includes(status)) {
+      throw new BadRequestException('当前设备存在借用或维修流程，不能直接停用或报废');
     }
     const updated = await this.prisma.device.update({ where: { id }, data: { status } });
     await this.auditLogs.record({
@@ -241,6 +248,7 @@ export class DevicesService {
       DeviceStatus.BORROW_PENDING,
       DeviceStatus.RESERVED,
       DeviceStatus.BORROWED,
+      DeviceStatus.WAITING_REPAIR,
       DeviceStatus.REPAIRING,
     ] as string[];
     if (blockedStatuses.includes(device.status)) {
