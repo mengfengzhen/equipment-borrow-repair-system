@@ -84,6 +84,11 @@ export class CreateDeviceDto {
   description?: string;
 }
 
+export class ImportDevicesDto {
+  @IsString()
+  csvText!: string;
+}
+
 export class UpdateDeviceDto {
   @IsOptional()
   @IsString()

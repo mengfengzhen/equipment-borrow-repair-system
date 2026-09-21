@@ -5,7 +5,7 @@ import { activeBorrowStatuses, BorrowStatus, DeviceStatus, RepairStatus, Roles }
 import { RequestUser } from '../common/current-user.decorator';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import { PrismaService } from '../prisma/prisma.service';
-import { BorrowOptionsQueryDto, CreateDeviceDto, DeviceQueryDto, UpdateDeviceDto } from './dto';
+import { BorrowOptionsQueryDto, CreateDeviceDto, DeviceQueryDto, ImportDevicesDto, UpdateDeviceDto } from './dto';
 
 @Injectable()
 export class DevicesService {
@@ -196,6 +196,84 @@ export class DevicesService {
     return quantity === 1 ? devices[0] : devices;
   }
 
+  async importFromCsv(dto: ImportDevicesDto, user: RequestUser) {
+    const parsed = parseDeviceCsv(dto.csvText);
+    if (!parsed.rows.length) {
+      throw new BadRequestException('CSV 中没有可导入的数据行');
+    }
+
+    const errors: string[] = [];
+    const normalizedRows = parsed.rows.map((row) => normalizeImportRow(row, parsed.headers, errors));
+    if (errors.length) {
+      throw new BadRequestException(errors.slice(0, 20).join('；'));
+    }
+
+    const ownerUsernames = Array.from(new Set(
+      normalizedRows
+        .map((row) => row.ownerUsername)
+        .filter((value): value is string => Boolean(value)),
+    ));
+    const owners = ownerUsernames.length
+      ? await this.prisma.user.findMany({ where: { username: { in: ownerUsernames } }, select: { id: true, username: true } })
+      : [];
+    const ownerByUsername = new Map(owners.map((owner) => [owner.username, owner.id]));
+    ownerUsernames.forEach((username) => {
+      if (!ownerByUsername.has(username)) {
+        errors.push(`责任人账号不存在：${username}`);
+      }
+    });
+    if (errors.length) {
+      throw new BadRequestException(errors.slice(0, 20).join('；'));
+    }
+
+    const expandedRows = normalizedRows.flatMap((row) =>
+      Array.from({ length: row.quantity }, () => ({
+        name: row.name,
+        type: row.type,
+        brand: row.brand,
+        model: row.model,
+        location: row.location,
+        ownerId: row.ownerUsername ? ownerByUsername.get(row.ownerUsername) : undefined,
+        purchaseDate: row.purchaseDate,
+        warrantyExpireDate: row.warrantyExpireDate,
+        value: row.value,
+        description: row.description,
+      })),
+    );
+
+    const codeAllocators = await this.createCodeAllocators(Array.from(new Set(expandedRows.map((row) => row.type))));
+    const created = await this.prisma.$transaction(
+      expandedRows.map((row) => {
+        const nextCode = codeAllocators.get(row.type);
+        if (!nextCode) {
+          throw new BadRequestException(`无法生成设备编号：${row.type}`);
+        }
+        return this.prisma.device.create({
+          data: {
+            ...row,
+            code: nextCode(),
+          },
+        });
+      }),
+    );
+
+    await this.auditLogs.record({
+      actorId: user.id,
+      action: 'IMPORT_DEVICES',
+      targetType: 'DEVICE',
+      targetId: created[0]?.id,
+      detail: {
+        rowCount: parsed.rows.length,
+        importedCount: created.length,
+      },
+    });
+
+    return {
+      rowCount: parsed.rows.length,
+      importedCount: created.length,
+    };
+  }
+
   async update(id: string, dto: UpdateDeviceDto, user: RequestUser) {
     await this.get(id);
     const device = await this.prisma.device.update({
@@ -307,7 +385,198 @@ export class DevicesService {
       `${codePrefix}${String(maxSequence + index + 1).padStart(3, '0')}`,
     );
   }
+
+  private async createCodeAllocators(types: string[]) {
+    const allocators = new Map<string, () => string>();
+    await Promise.all(types.map(async (type) => {
+      const prefix = deviceTypePrefixes[type] || 'EQP';
+      const year = new Date().getFullYear();
+      const codePrefix = `${prefix}-${year}-`;
+      const existingDevices = await this.prisma.device.findMany({
+        where: { code: { startsWith: codePrefix } },
+        select: { code: true },
+      });
+      let sequence = existingDevices.reduce((max, device) => {
+        const current = Number(device.code.slice(codePrefix.length));
+        return Number.isFinite(current) ? Math.max(max, current) : max;
+      }, 0);
+      allocators.set(type, () => {
+        sequence += 1;
+        return `${codePrefix}${String(sequence).padStart(3, '0')}`;
+      });
+    }));
+    return allocators;
+  }
 }
+
+type RawCsvRow = {
+  lineNumber: number;
+  values: string[];
+};
+
+type NormalizedImportRow = {
+  name: string;
+  type: string;
+  quantity: number;
+  brand?: string;
+  model?: string;
+  location: string;
+  ownerUsername?: string;
+  purchaseDate?: Date;
+  warrantyExpireDate?: Date;
+  value?: number;
+  description?: string;
+};
+
+function parseDeviceCsv(csvText: string) {
+  const table = parseCsv(csvText.replace(/^\uFEFF/, ''));
+  if (table.length < 2) {
+    throw new BadRequestException('CSV 至少需要包含表头和一行数据');
+  }
+  const headers = table[0].map((header) => normalizeHeader(header));
+  const rows: RawCsvRow[] = table
+    .slice(1)
+    .map((values, index) => ({ lineNumber: index + 2, values }))
+    .filter((row) => row.values.some((value) => value.trim()));
+  return { headers, rows };
+}
+
+function normalizeImportRow(row: RawCsvRow, headers: string[], errors: string[]): NormalizedImportRow {
+  const read = (key: string) => {
+    const index = headers.indexOf(key);
+    return index >= 0 ? (row.values[index] || '').trim() : '';
+  };
+  const line = `第 ${row.lineNumber} 行`;
+  const name = read('name');
+  const type = read('type');
+  const location = read('location');
+  const quantityText = read('quantity') || '1';
+  const quantity = Number(quantityText);
+  const purchaseDate = parseOptionalDate(read('purchaseDate'), `${line} 购买时间`, errors);
+  const warrantyExpireDate = parseOptionalDate(read('warrantyExpireDate'), `${line} 保修到期时间`, errors);
+  const value = parseOptionalNumber(read('value'), `${line} 设备价值`, errors);
+
+  if (!name) errors.push(`${line} 缺少设备名称`);
+  if (!type) errors.push(`${line} 缺少设备类型`);
+  if (!location) errors.push(`${line} 缺少存放地点`);
+  if (!Number.isInteger(quantity) || quantity < 1 || quantity > 100) {
+    errors.push(`${line} 入库数量必须是 1-100 的整数`);
+  }
+
+  return {
+    name,
+    type,
+    quantity: Number.isInteger(quantity) ? quantity : 1,
+    brand: read('brand') || undefined,
+    model: read('model') || undefined,
+    location,
+    ownerUsername: read('ownerUsername') || undefined,
+    purchaseDate,
+    warrantyExpireDate,
+    value,
+    description: read('description') || undefined,
+  };
+}
+
+function parseOptionalDate(value: string, label: string, errors: string[]) {
+  if (!value) return undefined;
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    errors.push(`${label}格式不正确，请使用 YYYY-MM-DD`);
+    return undefined;
+  }
+  return date;
+}
+
+function parseOptionalNumber(value: string, label: string, errors: string[]) {
+  if (!value) return undefined;
+  const number = Number(value);
+  if (!Number.isFinite(number)) {
+    errors.push(`${label}必须是数字`);
+    return undefined;
+  }
+  return number;
+}
+
+function parseCsv(csvText: string) {
+  const rows: string[][] = [];
+  let currentRow: string[] = [];
+  let current = '';
+  let inQuotes = false;
+
+  for (let index = 0; index < csvText.length; index += 1) {
+    const char = csvText[index];
+    const next = csvText[index + 1];
+
+    if (char === '"') {
+      if (inQuotes && next === '"') {
+        current += '"';
+        index += 1;
+      } else {
+        inQuotes = !inQuotes;
+      }
+      continue;
+    }
+
+    if (char === ',' && !inQuotes) {
+      currentRow.push(current);
+      current = '';
+      continue;
+    }
+
+    if ((char === '\n' || char === '\r') && !inQuotes) {
+      if (char === '\r' && next === '\n') {
+        index += 1;
+      }
+      currentRow.push(current);
+      rows.push(currentRow);
+      currentRow = [];
+      current = '';
+      continue;
+    }
+
+    current += char;
+  }
+
+  currentRow.push(current);
+  rows.push(currentRow);
+  return rows.filter((row) => row.some((value) => value.trim()));
+}
+
+function normalizeHeader(header: string) {
+  const key = header.trim().replace(/\s+/g, '').toLowerCase();
+  return headerAliases[key] || key;
+}
+
+const headerAliases: Record<string, string> = {
+  name: 'name',
+  设备名称: 'name',
+  type: 'type',
+  设备类型: 'type',
+  quantity: 'quantity',
+  入库数量: 'quantity',
+  数量: 'quantity',
+  brand: 'brand',
+  品牌: 'brand',
+  model: 'model',
+  型号: 'model',
+  location: 'location',
+  存放地点: 'location',
+  位置: 'location',
+  ownerusername: 'ownerUsername',
+  保管人账号: 'ownerUsername',
+  责任人账号: 'ownerUsername',
+  purchasedate: 'purchaseDate',
+  购买时间: 'purchaseDate',
+  warrantyexpiredate: 'warrantyExpireDate',
+  保修到期时间: 'warrantyExpireDate',
+  value: 'value',
+  设备价值: 'value',
+  价值: 'value',
+  description: 'description',
+  说明: 'description',
+  备注: 'description',
+};
 
 const deviceTypePrefixes: Record<string, string> = {
   摄影器材: 'CAM',

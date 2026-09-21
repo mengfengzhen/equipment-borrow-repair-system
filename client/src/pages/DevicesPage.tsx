@@ -15,6 +15,12 @@ import { serializeAttachments, uploadFiles } from '../utils/upload';
 
 const activeBorrowStatuses = ['PENDING_APPROVAL', 'NEED_MORE_INFO', 'APPROVED', 'PICKED_UP', 'OVERDUE'];
 const deviceStatusOptions = Object.entries(deviceStatusNames).map(([value, label]) => ({ value, label }));
+const csvSample = [
+  'name,type,quantity,brand,model,location,ownerUsername,purchaseDate,warrantyExpireDate,value,description',
+  '索尼 A7M4,摄影器材,2,索尼,A7M4,器材室-A101,admin,2026-01-10,2028-01-10,12999,全画幅相机',
+  'ThinkPad X1,电脑设备,1,联想,X1 Carbon,信息部-B203,admin,2026-02-15,2029-02-15,8999,办公笔记本',
+].join('\n');
+
 type DeviceHistory = {
   borrows: BorrowRequest[];
   repairs: Array<{ id: string; status: string; faultDescription: string; repairStartAt: string; repairer?: { name: string } }>;
@@ -39,6 +45,9 @@ export function DevicesPage() {
   const [open, setOpen] = useState(false);
   const [editingDevice, setEditingDevice] = useState<Device>();
   const [borrowOpen, setBorrowOpen] = useState(false);
+  const [importOpen, setImportOpen] = useState(false);
+  const [importFileList, setImportFileList] = useState<UploadFile[]>([]);
+  const [importing, setImporting] = useState(false);
   const [selectedBorrowOptionKey, setSelectedBorrowOptionKey] = useState<string>();
   const [repairConfirmDevice, setRepairConfirmDevice] = useState<Device>();
   const [detailOpen, setDetailOpen] = useState<{ device: Device; history?: DeviceHistory }>();
@@ -198,6 +207,42 @@ export function DevicesPage() {
     form.resetFields();
     form.setFieldsValue({ quantity: 1 });
     setOpen(true);
+  };
+
+  const openImportDevices = () => {
+    setImportFileList([]);
+    setImportOpen(true);
+  };
+
+  const submitImportDevices = async () => {
+    const file = importFileList[0]?.originFileObj as File | undefined;
+    if (!file) {
+      message.error('请先选择 CSV 文件');
+      return;
+    }
+    try {
+      setImporting(true);
+      const csvText = await readFileAsText(file);
+      const result = await http.post('/devices/import', { csvText }) as unknown as { importedCount: number; rowCount: number };
+      message.success(`已导入 ${result.importedCount} 台设备，来源 ${result.rowCount} 行 CSV 数据`);
+      setImportOpen(false);
+      setImportFileList([]);
+      load();
+    } catch (error) {
+      message.error((error as Error).message);
+    } finally {
+      setImporting(false);
+    }
+  };
+
+  const downloadCsvSample = () => {
+    const blob = new Blob([`\uFEFF${csvSample}`], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = 'devices-import-sample.csv';
+    link.click();
+    URL.revokeObjectURL(url);
   };
 
   const openEditDevice = (device: Device) => {
@@ -399,9 +444,14 @@ export function DevicesPage() {
           </Button>
         )}
         {canManageDevices && (
-          <Button type="primary" icon={<PlusOutlined />} onClick={openCreateDevice}>
-            新增设备
-          </Button>
+          <Space>
+            <Button icon={<UploadOutlined />} onClick={openImportDevices}>
+              批量导入设备
+            </Button>
+            <Button type="primary" icon={<PlusOutlined />} onClick={openCreateDevice}>
+              新增设备
+            </Button>
+          </Space>
         )}
       </div>
       <div className="content-card">
@@ -503,6 +553,53 @@ export function DevicesPage() {
           <Form.Item name="value" label="设备价值"><InputNumber style={{ width: '100%' }} /></Form.Item>
           <Form.Item name="description" label="说明"><Input.TextArea rows={3} /></Form.Item>
         </Form>
+      </Modal>
+      <Modal
+        title="批量导入设备"
+        open={importOpen}
+        onCancel={() => {
+          setImportOpen(false);
+          setImportFileList([]);
+        }}
+        onOk={submitImportDevices}
+        confirmLoading={importing}
+        okText="开始导入"
+        destroyOnClose
+      >
+        <Space direction="vertical" size={16} style={{ width: '100%' }}>
+          <Alert
+            type="info"
+            showIcon
+            message="CSV 格式说明"
+            description="必填列：name、type、location。quantity 不填默认为 1；ownerUsername 填用户账号，找不到账号会阻止导入。设备编号由系统按类型自动生成。"
+          />
+          <div>
+            <Typography.Text strong>示例 CSV</Typography.Text>
+            <pre className="csv-sample-block">{csvSample}</pre>
+            <Button size="small" onClick={downloadCsvSample}>下载示例 CSV</Button>
+          </div>
+          <Upload.Dragger
+            accept=".csv,text/csv"
+            maxCount={1}
+            fileList={importFileList}
+            beforeUpload={(file) => {
+              setImportFileList([{
+                uid: file.uid,
+                name: file.name,
+                status: 'done',
+                originFileObj: file,
+              }]);
+              return false;
+            }}
+            onRemove={() => {
+              setImportFileList([]);
+            }}
+          >
+            <p className="ant-upload-drag-icon"><UploadOutlined /></p>
+            <p className="ant-upload-text">点击或拖拽 CSV 文件到这里</p>
+            <p className="ant-upload-hint">仅导入设备基础信息，状态默认可用。</p>
+          </Upload.Dragger>
+        </Space>
       </Modal>
       <Modal
         title={`维修验收：${repairConfirmDevice?.name || ''}`}
@@ -733,4 +830,13 @@ function buildOwnerOptions(users: User[], currentUser: User) {
       role: currentUser.role,
     },
   ];
+}
+
+function readFileAsText(file: File) {
+  return new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result || ''));
+    reader.onerror = () => reject(new Error('读取 CSV 文件失败'));
+    reader.readAsText(file, 'utf-8');
+  });
 }

@@ -804,7 +804,7 @@ body {
 }
 
 .users-page-heading {
-  margin-bottom: 24px;
+  margin-bottom: 40px;
 }
 
 .user-create-form .ant-form-item {
@@ -1007,6 +1007,19 @@ body {
   height: 8px;
   border-radius: 999px;
   background: currentColor;
+}
+
+.csv-sample-block {
+  margin: 8px 0 10px;
+  padding: 12px;
+  max-width: 100%;
+  overflow-x: auto;
+  border: 1px solid #d9e2ef;
+  border-radius: 8px;
+  background: #f8fafc;
+  color: #0f172a;
+  font-size: 12px;
+  line-height: 1.6;
 }
 
 .ant-table-wrapper .ant-table-thead > tr > th {

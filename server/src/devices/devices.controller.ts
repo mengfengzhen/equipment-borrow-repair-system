@@ -6,7 +6,7 @@ import { DeviceStatus, Roles } from '../common/constants';
 import { CurrentUser, RequestUser } from '../common/current-user.decorator';
 import { RequireRoles } from '../common/roles.decorator';
 import { RolesGuard } from '../common/roles.guard';
-import { BorrowOptionsQueryDto, CreateDeviceDto, DeviceQueryDto, UpdateDeviceDto } from './dto';
+import { BorrowOptionsQueryDto, CreateDeviceDto, DeviceQueryDto, ImportDevicesDto, UpdateDeviceDto } from './dto';
 import { DevicesService } from './devices.service';
 
 @ApiTags('devices')
@@ -44,6 +44,12 @@ export class DevicesController {
   @RequireRoles(Roles.ADMIN)
   create(@Body() dto: CreateDeviceDto, @CurrentUser() user: RequestUser) {
     return this.devicesService.create(dto, user);
+  }
+
+  @Post('import')
+  @RequireRoles(Roles.ADMIN)
+  importDevices(@Body() dto: ImportDevicesDto, @CurrentUser() user: RequestUser) {
+    return this.devicesService.importFromCsv(dto, user);
   }
 
   @Patch(':id')

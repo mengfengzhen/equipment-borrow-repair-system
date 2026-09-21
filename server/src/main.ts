@@ -15,6 +15,8 @@ async function bootstrap() {
   const app = await NestFactory.create<NestExpressApplication>(AppModule);
   const config = app.get(ConfigService);
   app.setGlobalPrefix('api');
+  app.useBodyParser('json', { limit: '5mb' });
+  app.useBodyParser('urlencoded', { extended: true, limit: '5mb' });
 
   const corsOrigin = config.get<string>('CORS_ORIGIN', 'http://localhost:5173')
     .split(',')
