@@ -807,6 +807,10 @@ body {
   margin-bottom: 24px;
 }
 
+.user-create-form .ant-form-item {
+  max-width: 360px;
+}
+
 .borrow-cta-button.ant-btn {
   min-width: 142px;
   height: 48px;

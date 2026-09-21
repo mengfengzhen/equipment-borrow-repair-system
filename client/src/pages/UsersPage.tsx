@@ -195,6 +195,7 @@ export function UsersPage() {
       <Modal
         title="添加账号"
         open={createOpen}
+        width={460}
         onCancel={() => {
           setCreateOpen(false);
           form.resetFields();
@@ -205,7 +206,7 @@ export function UsersPage() {
         cancelText="取消"
         destroyOnHidden
       >
-        <Form form={form} layout="vertical">
+        <Form form={form} className="user-create-form" layout="vertical">
           <Form.Item name="username" label="账号" rules={[{ required: true, message: '请输入账号' }]}>
             <Input placeholder="建议使用工号或姓名拼音" />
           </Form.Item>
