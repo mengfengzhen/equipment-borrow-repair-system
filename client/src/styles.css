@@ -1037,6 +1037,90 @@ body {
   margin-bottom: 16px;
 }
 
+.dictionary-tree-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 16px;
+  align-items: start;
+}
+
+.dictionary-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.dictionary-panel-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.dictionary-panel-header .ant-typography {
+  margin: 0;
+}
+
+.dictionary-list,
+.dictionary-location-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.dictionary-location-panel {
+  margin-top: 16px;
+}
+
+.dictionary-location-list {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.dictionary-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  gap: 8px;
+  align-items: center;
+  padding: 10px;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  background: #fff;
+}
+
+.dictionary-row.is-active {
+  border-color: #2563eb;
+  background: #eff6ff;
+}
+
+.dictionary-row-main {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  border: 0;
+  padding: 0;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.dictionary-row-main span {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+@media (max-width: 1180px) {
+  .dictionary-tree-grid,
+  .dictionary-location-list {
+    grid-template-columns: 1fr;
+  }
+}
+
 .ant-table-wrapper .ant-table-thead > tr > th {
   background: #f7f9fc;
   color: #475467;

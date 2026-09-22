@@ -519,7 +519,7 @@ export function DevicesPage() {
         {canManageDevices && (
           <Space>
             <Button icon={<SettingOutlined />} onClick={() => navigate('/device-dictionaries')}>
-              字典管理
+              字段管理
             </Button>
             <Button icon={<UploadOutlined />} onClick={openImportDevices}>
               批量导入设备
