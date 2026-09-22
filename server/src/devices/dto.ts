@@ -90,8 +90,8 @@ export class ImportDevicesDto {
 }
 
 export class DeviceDictionaryFieldDto {
-  @IsIn(['type', 'brand', 'model', 'location'])
-  field!: 'type' | 'brand' | 'model' | 'location';
+  @IsIn(['type', 'brand', 'typeBrand', 'model', 'location'])
+  field!: 'type' | 'brand' | 'typeBrand' | 'model' | 'location';
 }
 
 export class CreateDeviceDictionaryDto {

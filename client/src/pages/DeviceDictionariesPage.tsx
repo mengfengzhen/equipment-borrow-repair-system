@@ -1,5 +1,5 @@
 import { DeleteOutlined, EditOutlined, PlusOutlined } from '@ant-design/icons';
-import { Button, Empty, Form, Input, Modal, Popconfirm, Select, Space, Spin, Tag, Typography, message } from 'antd';
+import { Button, Empty, Form, Input, Modal, Popconfirm, Space, Spin, Tag, Typography, message } from 'antd';
 import { useEffect, useMemo, useState } from 'react';
 import { http } from '../api/http';
 import { DeviceDictionaryGroup, DeviceDictionaryItem } from '../types/deviceDictionary';
@@ -44,13 +44,9 @@ export function DeviceDictionariesPage() {
 
   const typeItems = useMemo(() => getGroup(groups, 'type'), [groups]);
   const brandItems = useMemo(() => getGroup(groups, 'brand'), [groups]);
+  const typeBrandItems = useMemo(() => getGroup(groups, 'typeBrand'), [groups]);
   const modelItems = useMemo(() => getGroup(groups, 'model'), [groups]);
   const locationItems = useMemo(() => getGroup(groups, 'location'), [groups]);
-
-  const brandOptions = useMemo(
-    () => brandItems.map((item) => ({ label: item.value, value: item.value })),
-    [brandItems],
-  );
 
   const filteredTypes = useMemo(
     () => filterByKeyword(typeItems, typeKeyword),
@@ -59,24 +55,16 @@ export function DeviceDictionariesPage() {
 
   const brandsForSelectedType = useMemo(() => {
     if (!selectedType) return [];
-    const map = new Map<string, BrandNode>();
-    modelItems
+    return typeBrandItems
       .filter((item) => item.type === selectedType)
-      .forEach((item) => {
-        if (!item.brand) return;
-        const current = map.get(item.brand) || {
-          value: item.brand,
-          used: false,
-          usageCount: 0,
-          models: [],
-        };
-        current.used = current.used || item.used;
-        current.usageCount += item.usageCount;
-        current.models.push(item);
-        map.set(item.brand, current);
-      });
-    return Array.from(map.values()).sort((a, b) => a.value.localeCompare(b.value, 'zh-Hans-CN'));
-  }, [modelItems, selectedType]);
+      .map((item) => ({
+        value: item.value,
+        used: item.used,
+        usageCount: item.usageCount,
+        models: modelItems.filter((model) => model.type === item.type && model.brand === item.value),
+      }))
+      .sort((a, b) => a.value.localeCompare(b.value, 'zh-Hans-CN'));
+  }, [modelItems, selectedType, typeBrandItems]);
 
   const filteredBrands = useMemo(
     () => filterByKeyword(brandsForSelectedType, brandKeyword),
@@ -106,12 +94,12 @@ export function DeviceDictionariesPage() {
       const result = await http.get('/devices/dictionaries') as unknown as DeviceDictionaryGroup[];
       setGroups(result);
       const types = getGroup(result, 'type');
-      const models = getGroup(result, 'model');
+      const typeBrands = getGroup(result, 'typeBrand');
       const nextType = selectedType && types.some((item) => item.value === selectedType)
         ? selectedType
         : types[0]?.value;
       const brands = nextType
-        ? Array.from(new Set(models.filter((item) => item.type === nextType).map((item) => item.brand).filter(Boolean))) as string[]
+        ? typeBrands.filter((item) => item.type === nextType).map((item) => item.value)
         : [];
       const nextBrand = selectedBrand && brands.includes(selectedBrand) ? selectedBrand : brands[0];
       setSelectedType(nextType);
@@ -158,27 +146,21 @@ export function DeviceDictionariesPage() {
         setSelectedType(values.value.trim());
       }
       if (modal.kind === 'brand-create') {
-        await ensureBrandExists(values.brand || '');
-        await http.post('/devices/dictionaries/model', {
+        const brand = await ensureBrandExists(values.brand || '');
+        await http.post('/devices/dictionaries/typeBrand', {
           type: modal.type,
-          brand: values.brand,
-          value: values.model,
+          value: brand,
         });
-        setSelectedBrand(values.brand?.trim());
+        setSelectedBrand(brand);
       }
       if (modal.kind === 'brand-edit') {
-        const nextBrand = (values.brand || '').trim();
-        await ensureBrandExists(nextBrand);
-        await Promise.all(modal.brand.models.map((item) =>
-          http.patch('/devices/dictionaries/model', {
-            oldType: modal.type,
-            oldBrand: modal.brand.value,
-            oldValue: item.value,
-            type: modal.type,
-            brand: nextBrand,
-            value: item.value,
-          }),
-        ));
+        const nextBrand = await ensureBrandExists(values.brand || '');
+        await http.patch('/devices/dictionaries/typeBrand', {
+          oldType: modal.type,
+          oldValue: modal.brand.value,
+          type: modal.type,
+          value: nextBrand,
+        });
         setSelectedBrand(nextBrand);
       }
       if (modal.kind === 'model-create') {
@@ -227,6 +209,7 @@ export function DeviceDictionariesPage() {
   const createModelRows = async (rows: Array<{ type: string; brand: string; model: string }>) => {
     const existingTypes = new Set(typeItems.map((item) => item.value));
     const existingBrands = new Set(brandItems.map((item) => item.value));
+    const existingTypeBrands = new Set(typeBrandItems.map((item) => buildModelKey(item.type, undefined, item.value)));
     const existingModels = new Set(modelItems.map((item) => buildModelKey(item.type, item.brand, item.value)));
 
     for (const row of rows) {
@@ -237,6 +220,11 @@ export function DeviceDictionariesPage() {
       if (!existingBrands.has(row.brand)) {
         await http.post('/devices/dictionaries/brand', { value: row.brand });
         existingBrands.add(row.brand);
+      }
+      const typeBrandKey = buildModelKey(row.type, undefined, row.brand);
+      if (!existingTypeBrands.has(typeBrandKey)) {
+        await http.post('/devices/dictionaries/typeBrand', { type: row.type, value: row.brand });
+        existingTypeBrands.add(typeBrandKey);
       }
       const modelKey = buildModelKey(row.type, row.brand, row.model);
       if (!existingModels.has(modelKey)) {
@@ -256,9 +244,10 @@ export function DeviceDictionariesPage() {
       throw new Error('请输入品牌');
     }
     if (brandItems.some((item) => item.value === value)) {
-      return;
+      return value;
     }
     await http.post('/devices/dictionaries/brand', { value });
+    return value;
   };
 
   const removeType = async (item: DeviceDictionaryItem) => {
@@ -270,16 +259,11 @@ export function DeviceDictionariesPage() {
   };
 
   const removeBrand = async (brand: BrandNode) => {
-    await Promise.all(brand.models.map((item) =>
-      http.delete('/devices/dictionaries/model', {
-        params: { type: item.type, brand: item.brand, value: item.value },
-      }),
-    ));
-    message.success('该类型下的品牌关系已删除');
-    if (selectedBrand === brand.value) {
-      setSelectedBrand(undefined);
-    }
-    await load();
+    await removeDictionaryValue('/devices/dictionaries/typeBrand', {
+      type: selectedType,
+      value: brand.value,
+    }, '该类型下的品牌关系已删除');
+    if (selectedBrand === brand.value) setSelectedBrand(undefined);
   };
 
   const removeModel = async (item: DeviceDictionaryItem) => {
@@ -316,7 +300,7 @@ export function DeviceDictionariesPage() {
         <div>
           <h1 className="page-title">设备字段管理</h1>
           <Typography.Text type="secondary">
-            按设备类型管理品牌和型号。新增品牌时需要同时添加至少一个型号，保证设备入库和 CSV 导入都有完整组合可选。
+            按设备类型管理品牌和型号。品牌可先挂到设备类型下，型号再挂到具体品牌下，设备入库和 CSV 导入按完整组合校验。
           </Typography.Text>
         </div>
         <Button type="primary" icon={<PlusOutlined />} onClick={() => openModal({ kind: 'bulk-create' })}>
@@ -349,7 +333,7 @@ export function DeviceDictionariesPage() {
                   usageCount={item.usageCount}
                   onClick={() => {
                     setSelectedType(item.value);
-                    const nextBrand = modelItems.find((model) => model.type === item.value)?.brand;
+                    const nextBrand = typeBrandItems.find((brand) => brand.type === item.value)?.value;
                     setSelectedBrand(nextBrand);
                   }}
                   onEdit={() => openModal({ kind: 'type-edit', item })}
@@ -474,31 +458,14 @@ export function DeviceDictionariesPage() {
       >
         <Form form={form} layout="vertical">
           {modal?.kind === 'brand-create' && (
-            <>
-              <Form.Item
-                name="brand"
-                label="品牌"
-                rules={[{ required: true, whitespace: true, message: '请输入品牌' }]}
-                extra="可填写已有品牌，也可填写新品牌。保存后会自动建立该类型和品牌的关系。"
-              >
-                <Select
-                  showSearch
-                  placeholder="选择或输入品牌"
-                  options={brandOptions}
-                  optionFilterProp="label"
-                  dropdownRender={(menu) => menu}
-                  onSearch={(value) => form.setFieldsValue({ brand: value })}
-                  onChange={(value) => form.setFieldsValue({ brand: value })}
-                />
-              </Form.Item>
-              <Form.Item
-                name="model"
-                label="首个型号"
-                rules={[{ required: true, whitespace: true, message: '请输入型号' }]}
-              >
-                <Input placeholder="请输入型号" />
-              </Form.Item>
-            </>
+            <Form.Item
+              name="brand"
+              label="品牌"
+              rules={[{ required: true, whitespace: true, message: '请输入品牌' }]}
+              extra="可填写已有品牌，也可填写新品牌。保存后会建立当前设备类型和品牌的关系。"
+            >
+              <Input placeholder="请输入品牌" />
+            </Form.Item>
           )}
           {modal?.kind === 'brand-edit' && (
             <Form.Item
@@ -506,14 +473,7 @@ export function DeviceDictionariesPage() {
               label="品牌"
               rules={[{ required: true, whitespace: true, message: '请输入品牌' }]}
             >
-              <Select
-                showSearch
-                placeholder="选择或输入品牌"
-                options={brandOptions}
-                optionFilterProp="label"
-                onSearch={(value) => form.setFieldsValue({ brand: value })}
-                onChange={(value) => form.setFieldsValue({ brand: value })}
-              />
+              <Input placeholder="请输入品牌" />
             </Form.Item>
           )}
           {modal?.kind === 'bulk-create' && (

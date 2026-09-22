@@ -1,4 +1,4 @@
-export type DeviceDictionaryField = 'type' | 'brand' | 'model' | 'location';
+export type DeviceDictionaryField = 'type' | 'brand' | 'typeBrand' | 'model' | 'location';
 
 export type DeviceDictionaryItem = {
   value: string;

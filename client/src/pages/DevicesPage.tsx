@@ -46,6 +46,7 @@ type SelectOption = {
 type DeviceDictionaryOptions = {
   type: SelectOption[];
   brand: SelectOption[];
+  typeBrand: DeviceDictionaryItem[];
   model: DeviceDictionaryItem[];
   location: SelectOption[];
 };
@@ -53,6 +54,7 @@ type DeviceDictionaryOptions = {
 const defaultDictionaryOptions: DeviceDictionaryOptions = {
   type: deviceTypeOptions,
   brand: deviceBrandOptions,
+  typeBrand: [],
   model: deviceModelOptions.map((item) => ({
     value: item.value,
     used: false,
@@ -100,13 +102,13 @@ export function DevicesPage() {
       return dictionaryOptions.brand;
     }
     const brands = new Set(
-      dictionaryOptions.model
+      dictionaryOptions.typeBrand
         .filter((item) => item.type === selectedDeviceType)
-        .map((item) => item.brand)
+        .map((item) => item.value)
         .filter((value): value is string => Boolean(value)),
     );
     return dictionaryOptions.brand.filter((item) => brands.has(item.value));
-  }, [dictionaryOptions.brand, dictionaryOptions.model, selectedDeviceType]);
+  }, [dictionaryOptions.brand, dictionaryOptions.typeBrand, selectedDeviceType]);
   const availableModelOptions = useMemo(() => {
     if (!selectedDeviceType || !selectedDeviceBrand) {
       return [];
@@ -930,12 +932,17 @@ function buildDictionaryOptions(groups: DeviceDictionaryGroup[]) {
   const result: DeviceDictionaryOptions = {
     type: defaultDictionaryOptions.type,
     brand: defaultDictionaryOptions.brand,
+    typeBrand: defaultDictionaryOptions.typeBrand,
     model: defaultDictionaryOptions.model,
     location: defaultDictionaryOptions.location,
   };
   groups.forEach((group) => {
     if (group.field === 'model') {
       result.model = group.items;
+      return;
+    }
+    if (group.field === 'typeBrand') {
+      result.typeBrand = group.items;
       return;
     }
     result[group.field] = group.items.map((item) => ({ label: item.value, value: item.value }));
