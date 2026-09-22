@@ -1037,6 +1037,62 @@ body {
   margin-bottom: 16px;
 }
 
+.dictionary-tabs {
+  display: flex;
+  gap: 6px;
+  max-width: 560px;
+  padding: 6px;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  background: #fff;
+}
+
+.dictionary-tab {
+  flex: 1;
+  border: 0;
+  border-radius: 9px;
+  padding: 12px 16px;
+  background: transparent;
+  color: #667085;
+  font-size: 15px;
+  font-weight: 700;
+  text-align: center;
+  cursor: pointer;
+}
+
+.dictionary-tab span {
+  margin-left: 8px;
+  color: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  opacity: 0.75;
+}
+
+.dictionary-tab.is-active {
+  background: #3b82f6;
+  color: #fff;
+  box-shadow: 0 8px 18px rgba(59, 130, 246, 0.22);
+}
+
+.dictionary-breadcrumb {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 16px;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  background: #fff;
+}
+
+.dictionary-breadcrumb strong {
+  color: #1f2937;
+  font-weight: 700;
+}
+
+.dictionary-breadcrumb-count {
+  margin-left: auto;
+}
+
 .dictionary-tree-grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -1061,6 +1117,29 @@ body {
   margin: 0;
 }
 
+.dictionary-panel-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+
+.dictionary-panel-title span {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 4px;
+  padding: 2px 8px;
+  background: #eff6ff;
+  color: #2563eb;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.dictionary-panel-count {
+  display: block;
+  margin-top: 2px;
+}
+
 .dictionary-list,
 .dictionary-location-list {
   display: flex;
@@ -1069,7 +1148,7 @@ body {
 }
 
 .dictionary-location-panel {
-  margin-top: 16px;
+  margin-top: 0;
 }
 
 .dictionary-location-list {

@@ -37,6 +37,7 @@ export function DeviceDictionariesPage() {
   const [brandKeyword, setBrandKeyword] = useState('');
   const [modelKeyword, setModelKeyword] = useState('');
   const [locationKeyword, setLocationKeyword] = useState('');
+  const [activeTab, setActiveTab] = useState<'device' | 'location'>('device');
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [modal, setModal] = useState<ModalState>();
@@ -293,6 +294,7 @@ export function DeviceDictionariesPage() {
 
   const selectedTypeItem = typeItems.find((item) => item.value === selectedType);
   const selectedBrandNode = brandsForSelectedType.find((item) => item.value === selectedBrand);
+  const totalDeviceFieldCount = typeItems.length + typeBrandItems.length + modelItems.length;
 
   return (
     <div className="page-stack">
@@ -308,11 +310,47 @@ export function DeviceDictionariesPage() {
         </Button>
       </div>
 
+      <div className="dictionary-tabs">
+        <button
+          type="button"
+          className={activeTab === 'device' ? 'dictionary-tab is-active' : 'dictionary-tab'}
+          onClick={() => setActiveTab('device')}
+        >
+          设备信息设置 <span>{totalDeviceFieldCount} 项</span>
+        </button>
+        <button
+          type="button"
+          className={activeTab === 'location' ? 'dictionary-tab is-active' : 'dictionary-tab'}
+          onClick={() => setActiveTab('location')}
+        >
+          存放地点 <span>{locationItems.length} 项</span>
+        </button>
+      </div>
+
       <Spin spinning={loading || saving}>
-        <div className="dictionary-tree-grid">
-          <section className="content-card dictionary-panel">
+        {activeTab === 'device' && (
+          <>
+            <div className="dictionary-breadcrumb">
+              <Typography.Text type="secondary">当前路径</Typography.Text>
+              <span>/</span>
+              <strong>{selectedType || '请选择设备类型'}</strong>
+              {selectedBrand && (
+                <>
+                  <span>/</span>
+                  <strong>{selectedBrand}</strong>
+                </>
+              )}
+              <Typography.Text type="secondary" className="dictionary-breadcrumb-count">
+                设备类型 {typeItems.length} 项，品牌关系 {typeBrandItems.length} 项，型号 {modelItems.length} 项
+              </Typography.Text>
+            </div>
+
+            <div className="dictionary-tree-grid">
+              <section className="content-card dictionary-panel">
             <DictionaryPanelHeader
               title="设备类型"
+              level="Level 1"
+              tip="设备大类"
               count={typeItems.length}
               buttonText="新增类型"
               onAdd={() => openModal({ kind: 'type-create' })}
@@ -344,15 +382,19 @@ export function DeviceDictionariesPage() {
               ))}
               {!filteredTypes.length && <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无设备类型" />}
             </div>
-          </section>
+              </section>
 
-          <section className="content-card dictionary-panel">
+              <section className="content-card dictionary-panel">
             <DictionaryPanelHeader
-              title={selectedType ? `${selectedType} 下的品牌` : '品牌'}
+              title="品牌"
+              level="Level 2"
+              tip={selectedType ? `当前：${selectedType}` : '请先选择左侧设备类型'}
               count={brandsForSelectedType.length}
               buttonText="新增品牌"
               disabled={!selectedType}
-              onAdd={() => selectedType && openModal({ kind: 'brand-create', type: selectedType })}
+              onAdd={() => {
+                if (selectedType) openModal({ kind: 'brand-create', type: selectedType });
+              }}
             />
             <Input.Search
               allowClear
@@ -380,15 +422,21 @@ export function DeviceDictionariesPage() {
               {selectedType && !filteredBrands.length && <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="该类型下暂无品牌" />}
               {!selectedType && <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="请先选择设备类型" />}
             </div>
-          </section>
+              </section>
 
-          <section className="content-card dictionary-panel">
+              <section className="content-card dictionary-panel">
             <DictionaryPanelHeader
-              title={selectedType && selectedBrand ? `${selectedBrand} 型号` : '型号'}
+              title="型号"
+              level="Level 3"
+              tip={selectedType && selectedBrand ? `当前：${selectedType} / ${selectedBrand}` : '请先选择中间品牌'}
               count={modelsForSelectedBrand.length}
               buttonText="新增型号"
               disabled={!selectedType || !selectedBrand}
-              onAdd={() => selectedType && selectedBrand && openModal({ kind: 'model-create', type: selectedType, brand: selectedBrand })}
+              onAdd={() => {
+                if (selectedType && selectedBrand) {
+                  openModal({ kind: 'model-create', type: selectedType, brand: selectedBrand });
+                }
+              }}
             />
             <Input.Search
               allowClear
@@ -413,12 +461,26 @@ export function DeviceDictionariesPage() {
               {selectedBrand && !filteredModels.length && <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="该品牌下暂无型号" />}
               {!selectedBrand && <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="请先选择品牌" />}
             </div>
-          </section>
-        </div>
+              </section>
+            </div>
+          </>
+        )}
 
-        <section className="content-card dictionary-panel dictionary-location-panel">
+        {activeTab === 'location' && (
+          <>
+            <div className="dictionary-breadcrumb">
+              <Typography.Text type="secondary">当前路径</Typography.Text>
+              <span>/</span>
+              <strong>存放地点</strong>
+              <Typography.Text type="secondary" className="dictionary-breadcrumb-count">
+                共 {locationItems.length} 项
+              </Typography.Text>
+            </div>
+            <section className="content-card dictionary-panel dictionary-location-panel">
           <DictionaryPanelHeader
             title="存放地点"
+            level="枚举列表"
+            tip="维护设备存放 / 领用的仓库地点"
             count={locationItems.length}
             buttonText="新增地点"
             onAdd={() => openModal({ kind: 'location-create' })}
@@ -444,7 +506,9 @@ export function DeviceDictionariesPage() {
             ))}
             {!filteredLocations.length && <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无存放地点" />}
           </div>
-        </section>
+            </section>
+          </>
+        )}
       </Spin>
 
       <Modal
@@ -506,12 +570,16 @@ export function DeviceDictionariesPage() {
 
 function DictionaryPanelHeader({
   title,
+  level,
+  tip,
   count,
   buttonText,
   disabled,
   onAdd,
 }: {
   title: string;
+  level?: string;
+  tip?: string;
   count: number;
   buttonText: string;
   disabled?: boolean;
@@ -520,8 +588,16 @@ function DictionaryPanelHeader({
   return (
     <div className="dictionary-panel-header">
       <div>
-        <Typography.Title level={5}>{title}</Typography.Title>
-        <Typography.Text type="secondary">共 {count} 项</Typography.Text>
+        <div className="dictionary-panel-title">
+          <Typography.Title level={5}>{title}</Typography.Title>
+          {level && <span>{level}</span>}
+        </div>
+        <Typography.Text type="secondary">{tip || `共 ${count} 项`}</Typography.Text>
+        {tip && (
+          <Typography.Text type="secondary" className="dictionary-panel-count">
+            共 {count} 项
+          </Typography.Text>
+        )}
       </div>
       <Button type="primary" icon={<PlusOutlined />} disabled={disabled} onClick={onAdd}>
         {buttonText}
