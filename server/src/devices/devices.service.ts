@@ -202,31 +202,43 @@ export class DevicesService {
       throw new BadRequestException('CSV 中没有可导入的数据行');
     }
 
-    const errors: string[] = [];
-    const normalizedRows = parsed.rows.map((row) => normalizeImportRow(row, parsed.headers, errors));
-    if (errors.length) {
-      throw new BadRequestException(errors.slice(0, 20).join('；'));
-    }
+    const normalizedRows = parsed.rows.map((row) => {
+      const errors: string[] = [];
+      return {
+        row: normalizeImportRow(row, parsed.headers, errors),
+        errors,
+      };
+    });
 
     const ownerUsernames = Array.from(new Set(
       normalizedRows
-        .map((row) => row.ownerUsername)
+        .filter((item) => !item.errors.length)
+        .map((item) => item.row.ownerUsername)
         .filter((value): value is string => Boolean(value)),
     ));
     const owners = ownerUsernames.length
       ? await this.prisma.user.findMany({ where: { username: { in: ownerUsernames } }, select: { id: true, username: true } })
       : [];
     const ownerByUsername = new Map(owners.map((owner) => [owner.username, owner.id]));
-    ownerUsernames.forEach((username) => {
-      if (!ownerByUsername.has(username)) {
-        errors.push(`责任人账号不存在：${username}`);
+    normalizedRows.forEach((item) => {
+      const username = item.row.ownerUsername;
+      if (username && !ownerByUsername.has(username)) {
+        item.errors.push(`第 ${item.row.lineNumber} 行 默认保管责任人账号不存在：${username}`);
       }
     });
-    if (errors.length) {
-      throw new BadRequestException(errors.slice(0, 20).join('；'));
+
+    const importableRows = normalizedRows.filter((item) => !item.errors.length).map((item) => item.row);
+    const skippedErrors = normalizedRows.flatMap((item) => item.errors);
+    if (!importableRows.length) {
+      return {
+        rowCount: parsed.rows.length,
+        importedCount: 0,
+        skippedCount: normalizedRows.length,
+        errors: skippedErrors.slice(0, 50),
+      };
     }
 
-    const expandedRows = normalizedRows.flatMap((row) =>
+    const expandedRows = importableRows.flatMap((row) =>
       Array.from({ length: row.quantity }, () => ({
         name: row.name,
         type: row.type,
@@ -265,12 +277,15 @@ export class DevicesService {
       detail: {
         rowCount: parsed.rows.length,
         importedCount: created.length,
+        skippedCount: skippedErrors.length ? normalizedRows.length - importableRows.length : 0,
       },
     });
 
     return {
       rowCount: parsed.rows.length,
       importedCount: created.length,
+      skippedCount: normalizedRows.length - importableRows.length,
+      errors: skippedErrors.slice(0, 50),
     };
   }
 
@@ -415,6 +430,7 @@ type RawCsvRow = {
 };
 
 type NormalizedImportRow = {
+  lineNumber: number;
   name: string;
   type: string;
   quantity: number;
@@ -449,6 +465,8 @@ function normalizeImportRow(row: RawCsvRow, headers: string[], errors: string[])
   const line = `第 ${row.lineNumber} 行`;
   const name = read('name');
   const type = read('type');
+  const brand = read('brand');
+  const model = read('model');
   const location = read('location');
   const quantityText = read('quantity') || '1';
   const quantity = Number(quantityText);
@@ -458,17 +476,32 @@ function normalizeImportRow(row: RawCsvRow, headers: string[], errors: string[])
 
   if (!name) errors.push(`${line} 缺少设备名称`);
   if (!type) errors.push(`${line} 缺少设备类型`);
+  if (!brand) errors.push(`${line} 缺少品牌`);
+  if (!model) errors.push(`${line} 缺少型号`);
   if (!location) errors.push(`${line} 缺少存放地点`);
+  if (type && !allowedDeviceTypes.has(type)) {
+    errors.push(`${line} 设备类型不在可选范围内：${type}`);
+  }
+  if (brand && !allowedDeviceBrands.has(brand)) {
+    errors.push(`${line} 品牌不在可选范围内：${brand}`);
+  }
+  if (model && !allowedDeviceModels.has(model)) {
+    errors.push(`${line} 型号不在可选范围内：${model}`);
+  }
+  if (location && !allowedDeviceLocations.has(location)) {
+    errors.push(`${line} 存放地点不在可选范围内：${location}`);
+  }
   if (!Number.isInteger(quantity) || quantity < 1 || quantity > 100) {
     errors.push(`${line} 入库数量必须是 1-100 的整数`);
   }
 
   return {
+    lineNumber: row.lineNumber,
     name,
     type,
     quantity: Number.isInteger(quantity) ? quantity : 1,
-    brand: read('brand') || undefined,
-    model: read('model') || undefined,
+    brand: brand || undefined,
+    model: model || undefined,
     location,
     ownerUsername: read('ownerUsername') || undefined,
     purchaseDate,
@@ -566,6 +599,7 @@ const headerAliases: Record<string, string> = {
   ownerusername: 'ownerUsername',
   保管人账号: 'ownerUsername',
   责任人账号: 'ownerUsername',
+  默认保管责任人账号: 'ownerUsername',
   purchasedate: 'purchaseDate',
   购买时间: 'purchaseDate',
   warrantyexpiredate: 'warrantyExpireDate',
@@ -589,6 +623,54 @@ const deviceTypePrefixes: Record<string, string> = {
   存储设备: 'STO',
   移动设备: 'MOB',
 };
+
+const allowedDeviceTypes = new Set(Object.keys(deviceTypePrefixes));
+
+const allowedDeviceBrands = new Set([
+  'Sony',
+  'Apple',
+  'Fluke',
+  'Jabra',
+  'Epson',
+  'Lenovo',
+  'DJI',
+  'Brother',
+  'H3C',
+  'SanDisk',
+  'Xiaomi',
+  'Honeywell',
+]);
+
+const allowedDeviceModels = new Set([
+  'A7M4',
+  'M3 Pro',
+  'LinkIQ',
+  'Speak2 75',
+  'CB-FH52',
+  'ThinkVision M14',
+  'RS 4',
+  'ICD-UX570F',
+  'PT-P900',
+  'Magic BE18000',
+  'Extreme Pro',
+  '14 Pro',
+  '1950GHD',
+]);
+
+const allowedDeviceLocations = new Set([
+  '行政库房 A1',
+  '行政库房 A2',
+  '行政库房 A3',
+  '行政库房 B1',
+  '行政库房 B2',
+  '行政库房 B3',
+  '行政库房 B4',
+  '行政库房 D1',
+  '行政库房 D2',
+  '实验室 C1',
+  '实验室 C3',
+  '产品部',
+]);
 
 export function buildDeviceGroupKey(device: { type: string; brand?: string | null; model?: string | null }) {
   return [device.type, device.brand || '', device.model || ''].join('::');

@@ -17,8 +17,8 @@ const activeBorrowStatuses = ['PENDING_APPROVAL', 'NEED_MORE_INFO', 'APPROVED', 
 const deviceStatusOptions = Object.entries(deviceStatusNames).map(([value, label]) => ({ value, label }));
 const csvSample = [
   'name,type,quantity,brand,model,location,ownerUsername,purchaseDate,warrantyExpireDate,value,description',
-  '索尼 A7M4,摄影器材,2,索尼,A7M4,器材室-A101,admin,2026-01-10,2028-01-10,12999,全画幅相机',
-  'ThinkPad X1,电脑设备,1,联想,X1 Carbon,信息部-B203,admin,2026-02-15,2029-02-15,8999,办公笔记本',
+  '索尼 A7M4,摄影器材,2,Sony,A7M4,行政库房 A1,admin,2026-01-10,2028-01-10,12999,全画幅相机',
+  'MacBook Pro,电脑设备,1,Apple,M3 Pro,行政库房 A2,admin,2026-02-15,2029-02-15,14999,办公笔记本',
 ].join('\n');
 
 type DeviceHistory = {
@@ -223,11 +223,32 @@ export function DevicesPage() {
     try {
       setImporting(true);
       const csvText = await readFileAsText(file);
-      const result = await http.post('/devices/import', { csvText }) as unknown as { importedCount: number; rowCount: number };
-      message.success(`已导入 ${result.importedCount} 台设备，来源 ${result.rowCount} 行 CSV 数据`);
-      setImportOpen(false);
-      setImportFileList([]);
-      load();
+      const result = await http.post('/devices/import', { csvText }) as unknown as {
+        importedCount: number;
+        rowCount: number;
+        skippedCount?: number;
+        errors?: string[];
+      };
+      if (result.importedCount > 0) {
+        message.success(`已导入 ${result.importedCount} 台设备，来源 ${result.rowCount} 行 CSV 数据`);
+        setImportOpen(false);
+        setImportFileList([]);
+        load();
+      } else {
+        message.warning('没有可导入的数据，请按提示修改 CSV 后重试');
+      }
+      if (result.skippedCount) {
+        Modal.warning({
+          title: `已跳过 ${result.skippedCount} 行不符合条件的数据`,
+          content: (
+            <div className="import-error-list">
+              {(result.errors || []).map((item, index) => (
+                <div key={`${item}-${index}`}>{item}</div>
+              ))}
+            </div>
+          ),
+        });
+      }
     } catch (error) {
       message.error((error as Error).message);
     } finally {
@@ -571,7 +592,7 @@ export function DevicesPage() {
             type="info"
             showIcon
             message="CSV 格式说明"
-            description="必填列：name、type、location。quantity 不填默认为 1；ownerUsername 填用户账号，找不到账号会阻止导入。设备编号由系统按类型自动生成。"
+            description="必填列：name、type、brand、model、location。设备类型、品牌、型号、存放地点必须和系统可选项一致；quantity 不填默认为 1；ownerUsername 填默认保管责任人账号。设备编号由系统按类型自动生成。"
           />
           <div>
             <Typography.Text strong>示例 CSV</Typography.Text>

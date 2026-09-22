@@ -1022,6 +1022,12 @@ body {
   line-height: 1.6;
 }
 
+.import-error-list {
+  max-height: 260px;
+  overflow-y: auto;
+  line-height: 1.8;
+}
+
 .ant-table-wrapper .ant-table-thead > tr > th {
   background: #f7f9fc;
   color: #475467;
