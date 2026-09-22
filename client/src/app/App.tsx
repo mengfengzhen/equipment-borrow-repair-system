@@ -3,6 +3,7 @@ import { AppLayout } from '../layouts/AppLayout';
 import { AuditLogsPage } from '../pages/AuditLogsPage';
 import { BorrowRequestsPage } from '../pages/BorrowRequestsPage';
 import { DashboardPage } from '../pages/DashboardPage';
+import { DeviceDictionariesPage } from '../pages/DeviceDictionariesPage';
 import { DevicesPage } from '../pages/DevicesPage';
 import { LoginPage } from '../pages/LoginPage';
 import { ReportsPage } from '../pages/ReportsPage';
@@ -16,6 +17,7 @@ export default function App() {
       <Route path="/" element={<RequireAuth />}>
         <Route index element={<DashboardPage />} />
         <Route path="devices" element={<DevicesPage />} />
+        <Route path="device-dictionaries" element={<DeviceDictionariesPage />} />
         <Route path="borrows" element={<BorrowRequestsPage />} />
         <Route path="repairs" element={<RepairsPage />} />
         <Route path="reports" element={<ReportsPage />} />

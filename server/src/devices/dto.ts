@@ -1,4 +1,4 @@
-import { IsDateString, IsInt, IsNumber, IsOptional, IsString, Max, Min } from 'class-validator';
+import { IsDateString, IsIn, IsInt, IsNumber, IsOptional, IsString, Max, Min } from 'class-validator';
 import { Type } from 'class-transformer';
 
 export class DeviceQueryDto {
@@ -87,6 +87,29 @@ export class CreateDeviceDto {
 export class ImportDevicesDto {
   @IsString()
   csvText!: string;
+}
+
+export class DeviceDictionaryFieldDto {
+  @IsIn(['type', 'brand', 'model', 'location'])
+  field!: 'type' | 'brand' | 'model' | 'location';
+}
+
+export class CreateDeviceDictionaryDto {
+  @IsString()
+  value!: string;
+}
+
+export class UpdateDeviceDictionaryDto {
+  @IsString()
+  oldValue!: string;
+
+  @IsString()
+  value!: string;
+}
+
+export class DeleteDeviceDictionaryDto {
+  @IsString()
+  value!: string;
 }
 
 export class UpdateDeviceDto {

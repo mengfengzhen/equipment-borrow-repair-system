@@ -5,7 +5,15 @@ import { activeBorrowStatuses, BorrowStatus, DeviceStatus, RepairStatus, Roles }
 import { RequestUser } from '../common/current-user.decorator';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import { PrismaService } from '../prisma/prisma.service';
-import { BorrowOptionsQueryDto, CreateDeviceDto, DeviceQueryDto, ImportDevicesDto, UpdateDeviceDto } from './dto';
+import {
+  CreateDeviceDictionaryDto,
+  BorrowOptionsQueryDto,
+  CreateDeviceDto,
+  DeviceQueryDto,
+  ImportDevicesDto,
+  UpdateDeviceDictionaryDto,
+  UpdateDeviceDto,
+} from './dto';
 
 @Injectable()
 export class DevicesService {
@@ -160,6 +168,96 @@ export class DevicesService {
     return occupied;
   }
 
+  async dictionaries() {
+    const dictionary = await this.getDeviceDictionaryValues();
+    const usage = await this.getDictionaryUsage();
+
+    return dictionaryFields.map((field) => ({
+      field,
+      label: dictionaryFieldLabels[field],
+      items: dictionary[field].map((value) => ({
+        value,
+        used: (usage[field].get(value) || 0) > 0,
+        usageCount: usage[field].get(value) || 0,
+      })),
+    }));
+  }
+
+  async createDictionaryValue(field: DeviceDictionaryField, dto: CreateDeviceDictionaryDto, user: RequestUser) {
+    const value = normalizeDictionaryValue(dto.value);
+    if (!value) {
+      throw new BadRequestException('请输入字典值');
+    }
+
+    const dictionary = await this.getDeviceDictionaryValues();
+    if (dictionary[field].includes(value)) {
+      throw new BadRequestException('字典值已存在');
+    }
+
+    dictionary[field].push(value);
+    await this.saveDeviceDictionaryValues(dictionary);
+    await this.auditLogs.record({
+      actorId: user.id,
+      action: 'CREATE_DEVICE_DICTIONARY_VALUE',
+      targetType: 'DEVICE_DICTIONARY',
+      detail: { field, value },
+    });
+    return this.dictionaries();
+  }
+
+  async updateDictionaryValue(field: DeviceDictionaryField, dto: UpdateDeviceDictionaryDto, user: RequestUser) {
+    const oldValue = normalizeDictionaryValue(dto.oldValue);
+    const value = normalizeDictionaryValue(dto.value);
+    if (!oldValue || !value) {
+      throw new BadRequestException('请输入字典值');
+    }
+    if (oldValue === value) {
+      return this.dictionaries();
+    }
+
+    const dictionary = await this.getDeviceDictionaryValues();
+    if (!dictionary[field].includes(oldValue)) {
+      throw new BadRequestException('原字典值不存在');
+    }
+    if (dictionary[field].includes(value)) {
+      throw new BadRequestException('新字典值已存在');
+    }
+    await this.assertDictionaryValueUnused(field, oldValue, '当前字典值已被使用，不能编辑');
+
+    dictionary[field] = dictionary[field].map((item) => (item === oldValue ? value : item));
+    await this.saveDeviceDictionaryValues(dictionary);
+    await this.auditLogs.record({
+      actorId: user.id,
+      action: 'UPDATE_DEVICE_DICTIONARY_VALUE',
+      targetType: 'DEVICE_DICTIONARY',
+      detail: { field, from: oldValue, to: value },
+    });
+    return this.dictionaries();
+  }
+
+  async deleteDictionaryValue(field: DeviceDictionaryField, dto: { value: string }, user: RequestUser) {
+    const value = normalizeDictionaryValue(dto.value);
+    if (!value) {
+      throw new BadRequestException('请选择要删除的字典值');
+    }
+
+    const dictionary = await this.getDeviceDictionaryValues();
+    if (!dictionary[field].includes(value)) {
+      throw new BadRequestException('字典值不存在');
+    }
+    await this.assertDictionaryValueUnused(field, value, '当前字典值已被使用，不能删除');
+
+    dictionary[field] = dictionary[field].filter((item) => item !== value);
+    await this.saveDeviceDictionaryValues(dictionary);
+    await this.auditLogs.record({
+      actorId: user.id,
+      action: 'DELETE_DEVICE_DICTIONARY_VALUE',
+      targetType: 'DEVICE_DICTIONARY',
+      detail: { field, value },
+    });
+    return this.dictionaries();
+  }
+
   async get(id: string) {
     const device = await this.prisma.device.findUnique({
       where: { id },
@@ -172,6 +270,8 @@ export class DevicesService {
   }
 
   async create(dto: CreateDeviceDto, user: RequestUser) {
+    const dictionary = await this.getDeviceDictionaryValues();
+    validateDeviceDictionaryValues(dto, dictionary);
     const { quantity = 1, ...deviceData } = dto;
     const codes = await this.generateDeviceCodes(dto.type, quantity);
     const devices = await this.prisma.$transaction(
@@ -202,10 +302,11 @@ export class DevicesService {
       throw new BadRequestException('CSV 中没有可导入的数据行');
     }
 
+    const dictionary = await this.getDeviceDictionaryValues();
     const normalizedRows = parsed.rows.map((row) => {
       const errors: string[] = [];
       return {
-        row: normalizeImportRow(row, parsed.headers, errors),
+        row: normalizeImportRow(row, parsed.headers, errors, dictionary),
         errors,
       };
     });
@@ -291,6 +392,8 @@ export class DevicesService {
 
   async update(id: string, dto: UpdateDeviceDto, user: RequestUser) {
     await this.get(id);
+    const dictionary = await this.getDeviceDictionaryValues();
+    validateDeviceDictionaryValues(dto, dictionary, true);
     const device = await this.prisma.device.update({
       where: { id },
       data: {
@@ -422,6 +525,61 @@ export class DevicesService {
     }));
     return allocators;
   }
+
+  private async getDeviceDictionaryValues(): Promise<DeviceDictionaryValues> {
+    const setting = await this.prisma.systemSetting.findUnique({ where: { key: deviceDictionarySettingKey } });
+    if (!setting) {
+      const dictionary = cloneDefaultDeviceDictionary();
+      await this.saveDeviceDictionaryValues(dictionary);
+      return dictionary;
+    }
+
+    try {
+      return sanitizeDeviceDictionary(JSON.parse(setting.value));
+    } catch {
+      const dictionary = cloneDefaultDeviceDictionary();
+      await this.saveDeviceDictionaryValues(dictionary);
+      return dictionary;
+    }
+  }
+
+  private async saveDeviceDictionaryValues(dictionary: DeviceDictionaryValues) {
+    const sanitized = sanitizeDeviceDictionary(dictionary);
+    await this.prisma.systemSetting.upsert({
+      where: { key: deviceDictionarySettingKey },
+      create: {
+        key: deviceDictionarySettingKey,
+        value: JSON.stringify(sanitized),
+      },
+      update: {
+        value: JSON.stringify(sanitized),
+      },
+    });
+  }
+
+  private async getDictionaryUsage(): Promise<Record<DeviceDictionaryField, Map<string, number>>> {
+    const usage = createEmptyDictionaryUsage();
+    const devices = await this.prisma.device.findMany({
+      where: { deletedAt: null },
+      select: { type: true, brand: true, model: true, location: true },
+    });
+
+    devices.forEach((device) => {
+      addUsage(usage.type, device.type);
+      addUsage(usage.brand, device.brand);
+      addUsage(usage.model, device.model);
+      addUsage(usage.location, device.location);
+    });
+
+    return usage;
+  }
+
+  private async assertDictionaryValueUnused(field: DeviceDictionaryField, value: string, message: string) {
+    const usage = await this.getDictionaryUsage();
+    if ((usage[field].get(value) || 0) > 0) {
+      throw new BadRequestException(message);
+    }
+  }
 }
 
 type RawCsvRow = {
@@ -444,6 +602,10 @@ type NormalizedImportRow = {
   description?: string;
 };
 
+type DeviceDictionaryField = 'type' | 'brand' | 'model' | 'location';
+
+type DeviceDictionaryValues = Record<DeviceDictionaryField, string[]>;
+
 function parseDeviceCsv(csvText: string) {
   const table = parseCsv(csvText.replace(/^\uFEFF/, ''));
   if (table.length < 2) {
@@ -457,7 +619,12 @@ function parseDeviceCsv(csvText: string) {
   return { headers, rows };
 }
 
-function normalizeImportRow(row: RawCsvRow, headers: string[], errors: string[]): NormalizedImportRow {
+function normalizeImportRow(
+  row: RawCsvRow,
+  headers: string[],
+  errors: string[],
+  dictionary: DeviceDictionaryValues,
+): NormalizedImportRow {
   const read = (key: string) => {
     const index = headers.indexOf(key);
     return index >= 0 ? (row.values[index] || '').trim() : '';
@@ -479,16 +646,16 @@ function normalizeImportRow(row: RawCsvRow, headers: string[], errors: string[])
   if (!brand) errors.push(`${line} 缺少品牌`);
   if (!model) errors.push(`${line} 缺少型号`);
   if (!location) errors.push(`${line} 缺少存放地点`);
-  if (type && !allowedDeviceTypes.has(type)) {
+  if (type && !dictionary.type.includes(type)) {
     errors.push(`${line} 设备类型不在可选范围内：${type}`);
   }
-  if (brand && !allowedDeviceBrands.has(brand)) {
+  if (brand && !dictionary.brand.includes(brand)) {
     errors.push(`${line} 品牌不在可选范围内：${brand}`);
   }
-  if (model && !allowedDeviceModels.has(model)) {
+  if (model && !dictionary.model.includes(model)) {
     errors.push(`${line} 型号不在可选范围内：${model}`);
   }
-  if (location && !allowedDeviceLocations.has(location)) {
+  if (location && !dictionary.location.includes(location)) {
     errors.push(`${line} 存放地点不在可选范围内：${location}`);
   }
   if (!Number.isInteger(quantity) || quantity < 1 || quantity > 100) {
@@ -612,6 +779,24 @@ const headerAliases: Record<string, string> = {
   备注: 'description',
 };
 
+const deviceDictionarySettingKey = 'DEVICE_DICTIONARY_VALUES';
+
+const dictionaryFields: DeviceDictionaryField[] = ['type', 'brand', 'model', 'location'];
+
+const dictionaryFieldLabels: Record<DeviceDictionaryField, string> = {
+  type: '设备类型',
+  brand: '品牌',
+  model: '型号',
+  location: '存放地点',
+};
+
+const defaultDeviceDictionary: DeviceDictionaryValues = {
+  type: ['摄影器材', '电脑设备', '测试设备', '音频设备', '会议设备', '办公设备', '网络设备', '存储设备', '移动设备'],
+  brand: ['Sony', 'Apple', 'Fluke', 'Jabra', 'Epson', 'Lenovo', 'DJI', 'Brother', 'H3C', 'SanDisk', 'Xiaomi', 'Honeywell'],
+  model: ['A7M4', 'M3 Pro', 'LinkIQ', 'Speak2 75', 'CB-FH52', 'ThinkVision M14', 'RS 4', 'ICD-UX570F', 'PT-P900', 'Magic BE18000', 'Extreme Pro', '14 Pro', '1950GHD'],
+  location: ['行政库房 A1', '行政库房 A2', '行政库房 A3', '行政库房 B1', '行政库房 B2', '行政库房 B3', '行政库房 B4', '行政库房 D1', '行政库房 D2', '实验室 C1', '实验室 C3', '产品部'],
+};
+
 const deviceTypePrefixes: Record<string, string> = {
   摄影器材: 'CAM',
   电脑设备: 'LAP',
@@ -624,53 +809,64 @@ const deviceTypePrefixes: Record<string, string> = {
   移动设备: 'MOB',
 };
 
-const allowedDeviceTypes = new Set(Object.keys(deviceTypePrefixes));
+function cloneDefaultDeviceDictionary(): DeviceDictionaryValues {
+  return sanitizeDeviceDictionary(defaultDeviceDictionary);
+}
 
-const allowedDeviceBrands = new Set([
-  'Sony',
-  'Apple',
-  'Fluke',
-  'Jabra',
-  'Epson',
-  'Lenovo',
-  'DJI',
-  'Brother',
-  'H3C',
-  'SanDisk',
-  'Xiaomi',
-  'Honeywell',
-]);
+function sanitizeDeviceDictionary(input: unknown): DeviceDictionaryValues {
+  const source = typeof input === 'object' && input ? input as Partial<DeviceDictionaryValues> : {};
+  return dictionaryFields.reduce((acc, field) => {
+    const values = Array.isArray(source[field]) ? source[field] : defaultDeviceDictionary[field];
+    acc[field] = Array.from(new Set(values.map((item) => normalizeDictionaryValue(item)).filter(Boolean)));
+    return acc;
+  }, {} as DeviceDictionaryValues);
+}
 
-const allowedDeviceModels = new Set([
-  'A7M4',
-  'M3 Pro',
-  'LinkIQ',
-  'Speak2 75',
-  'CB-FH52',
-  'ThinkVision M14',
-  'RS 4',
-  'ICD-UX570F',
-  'PT-P900',
-  'Magic BE18000',
-  'Extreme Pro',
-  '14 Pro',
-  '1950GHD',
-]);
+function normalizeDictionaryValue(value: unknown) {
+  return String(value || '').trim();
+}
 
-const allowedDeviceLocations = new Set([
-  '行政库房 A1',
-  '行政库房 A2',
-  '行政库房 A3',
-  '行政库房 B1',
-  '行政库房 B2',
-  '行政库房 B3',
-  '行政库房 B4',
-  '行政库房 D1',
-  '行政库房 D2',
-  '实验室 C1',
-  '实验室 C3',
-  '产品部',
-]);
+function validateDeviceDictionaryValues(
+  dto: Partial<Pick<CreateDeviceDto, 'type' | 'brand' | 'model' | 'location'>>,
+  dictionary: DeviceDictionaryValues,
+  partial = false,
+) {
+  if (!partial || dto.type !== undefined) {
+    validateDictionaryValue('type', dto.type, dictionary);
+  }
+  if (!partial || dto.brand !== undefined) {
+    validateDictionaryValue('brand', dto.brand, dictionary);
+  }
+  if (!partial || dto.model !== undefined) {
+    validateDictionaryValue('model', dto.model, dictionary);
+  }
+  if (!partial || dto.location !== undefined) {
+    validateDictionaryValue('location', dto.location, dictionary);
+  }
+}
+
+function validateDictionaryValue(field: DeviceDictionaryField, value: string | undefined, dictionary: DeviceDictionaryValues) {
+  const normalized = normalizeDictionaryValue(value);
+  if (!normalized) {
+    throw new BadRequestException(`请选择${dictionaryFieldLabels[field]}`);
+  }
+  if (!dictionary[field].includes(normalized)) {
+    throw new BadRequestException(`${dictionaryFieldLabels[field]}不在字典范围内：${normalized}`);
+  }
+}
+
+function createEmptyDictionaryUsage(): Record<DeviceDictionaryField, Map<string, number>> {
+  return dictionaryFields.reduce((acc, field) => {
+    acc[field] = new Map<string, number>();
+    return acc;
+  }, {} as Record<DeviceDictionaryField, Map<string, number>>);
+}
+
+function addUsage(usage: Map<string, number>, value?: string | null) {
+  const normalized = normalizeDictionaryValue(value);
+  if (!normalized) return;
+  usage.set(normalized, (usage.get(normalized) || 0) + 1);
+}
 
 export function buildDeviceGroupKey(device: { type: string; brand?: string | null; model?: string | null }) {
   return [device.type, device.brand || '', device.model || ''].join('::');

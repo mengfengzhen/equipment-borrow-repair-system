@@ -1,9 +1,9 @@
 import { User } from '../types/models';
 
-export type MenuKey = '/' | '/devices' | '/borrows' | '/repairs' | '/reports' | '/users' | '/logs';
+export type MenuKey = '/' | '/devices' | '/device-dictionaries' | '/borrows' | '/repairs' | '/reports' | '/users' | '/logs';
 
 const roleMenus: Record<string, MenuKey[]> = {
-  ADMIN: ['/', '/devices', '/borrows', '/repairs', '/reports', '/users', '/logs'],
+  ADMIN: ['/', '/devices', '/device-dictionaries', '/borrows', '/repairs', '/reports', '/users', '/logs'],
   MANAGER: ['/', '/devices', '/borrows', '/users'],
   USER: ['/', '/devices', '/borrows'],
   REPAIRER: ['/', '/devices', '/repairs'],

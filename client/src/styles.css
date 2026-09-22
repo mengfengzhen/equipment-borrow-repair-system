@@ -1028,6 +1028,15 @@ body {
   line-height: 1.8;
 }
 
+.dictionary-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 16px;
+}
+
 .ant-table-wrapper .ant-table-thead > tr > th {
   background: #f7f9fc;
   color: #475467;

@@ -1,13 +1,14 @@
-import { DeleteOutlined, EditOutlined, EyeOutlined, PlusOutlined, UploadOutlined } from '@ant-design/icons';
+import { DeleteOutlined, EditOutlined, EyeOutlined, PlusOutlined, SettingOutlined, UploadOutlined } from '@ant-design/icons';
 import { Alert, Button, DatePicker, Descriptions, Drawer, Form, Input, InputNumber, Modal, Popconfirm, Select, Space, Table, Typography, Upload, message } from 'antd';
 import { ColumnsType } from 'antd/es/table';
 import type { UploadFile } from 'antd/es/upload/interface';
 import dayjs from 'dayjs';
 import { useEffect, useState } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { http } from '../api/http';
 import { StatusTag } from '../components/StatusTag';
 import { deviceBrandOptions, deviceLocationOptions, deviceModelOptions, deviceTypeOptions } from '../constants/deviceOptions';
+import { DeviceDictionaryGroup } from '../types/deviceDictionary';
 import { deviceStatusNames, repairStatusNames } from '../types/enums';
 import { BorrowRequest, Device, User } from '../types/models';
 import { formatDateRange, formatDateTime, money } from '../utils/format';
@@ -37,6 +38,13 @@ type BorrowOption = {
   sampleDeviceId: string;
 };
 
+const defaultDictionaryOptions = {
+  type: deviceTypeOptions,
+  brand: deviceBrandOptions,
+  model: deviceModelOptions,
+  location: deviceLocationOptions,
+};
+
 export function DevicesPage() {
   const [devices, setDevices] = useState<Device[]>([]);
   const [borrowRequests, setBorrowRequests] = useState<BorrowRequest[]>([]);
@@ -50,11 +58,13 @@ export function DevicesPage() {
   const [importing, setImporting] = useState(false);
   const [selectedBorrowOptionKey, setSelectedBorrowOptionKey] = useState<string>();
   const [repairConfirmDevice, setRepairConfirmDevice] = useState<Device>();
+  const [dictionaryOptions, setDictionaryOptions] = useState(defaultDictionaryOptions);
   const [detailOpen, setDetailOpen] = useState<{ device: Device; history?: DeviceHistory }>();
   const [form] = Form.useForm();
   const [filterForm] = Form.useForm();
   const [borrowForm] = Form.useForm();
   const [repairConfirmForm] = Form.useForm();
+  const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const user = JSON.parse(localStorage.getItem('user') || '{}') as User;
   const canApplyBorrow = user.role === 'USER';
@@ -80,16 +90,20 @@ export function DevicesPage() {
   const load = async () => {
     try {
       const query = buildQuery();
-      const [deviceRes, borrowRes, userRes, optionRes] = await Promise.all([
+      const [deviceRes, borrowRes, userRes, optionRes, dictionaryRes] = await Promise.all([
         http.get(`/devices${query}`),
         canApplyBorrow ? http.get('/borrow-requests') : Promise.resolve([]),
         canManageDevices ? http.get('/users') : Promise.resolve([]),
         canApplyBorrow ? http.get('/devices/borrow-options') : Promise.resolve([]),
+        canManageDevices ? http.get('/devices/dictionaries') : Promise.resolve([]),
       ]);
       setDevices(deviceRes as unknown as Device[]);
       setBorrowRequests(borrowRes as unknown as BorrowRequest[]);
       setUsers(userRes as unknown as User[]);
       setBorrowOptions(optionRes as unknown as BorrowOption[]);
+      if (canManageDevices) {
+        setDictionaryOptions(buildDictionaryOptions(dictionaryRes as unknown as DeviceDictionaryGroup[]));
+      }
     } catch (error) {
       message.error((error as Error).message);
     }
@@ -466,6 +480,9 @@ export function DevicesPage() {
         )}
         {canManageDevices && (
           <Space>
+            <Button icon={<SettingOutlined />} onClick={() => navigate('/device-dictionaries')}>
+              字典管理
+            </Button>
             <Button icon={<UploadOutlined />} onClick={openImportDevices}>
               批量导入设备
             </Button>
@@ -490,13 +507,13 @@ export function DevicesPage() {
             <Select allowClear placeholder="全部状态" options={deviceStatusOptions} style={{ width: 132 }} />
           </Form.Item>
           <Form.Item name="type" label="类型">
-            <Select allowClear placeholder="全部类型" options={deviceTypeOptions} style={{ width: 140 }} />
+            <Select allowClear placeholder="全部类型" options={dictionaryOptions.type} style={{ width: 140 }} />
           </Form.Item>
           <Form.Item name="brand" label="品牌">
-            <Select allowClear placeholder="全部品牌" options={deviceBrandOptions} style={{ width: 132 }} />
+            <Select allowClear placeholder="全部品牌" options={dictionaryOptions.brand} style={{ width: 132 }} />
           </Form.Item>
           <Form.Item name="location" label="地点">
-            <Select allowClear placeholder="全部地点" options={deviceLocationOptions} style={{ width: 160 }} />
+            <Select allowClear placeholder="全部地点" options={dictionaryOptions.location} style={{ width: 160 }} />
           </Form.Item>
           <Form.Item>
             <Space>
@@ -543,16 +560,16 @@ export function DevicesPage() {
             </Form.Item>
           )}
           <Form.Item name="type" label="设备类型" rules={[{ required: true, message: '请选择设备类型' }]}>
-            <Select placeholder="选择设备类型" options={deviceTypeOptions} />
+            <Select placeholder="选择设备类型" options={dictionaryOptions.type} />
           </Form.Item>
           <Form.Item name="brand" label="品牌" rules={[{ required: true, message: '请选择品牌' }]}>
-            <Select showSearch placeholder="选择品牌" options={deviceBrandOptions} optionFilterProp="label" />
+            <Select showSearch placeholder="选择品牌" options={dictionaryOptions.brand} optionFilterProp="label" />
           </Form.Item>
           <Form.Item name="model" label="型号" rules={[{ required: true, message: '请选择型号' }]}>
-            <Select showSearch placeholder="选择型号" options={deviceModelOptions} optionFilterProp="label" />
+            <Select showSearch placeholder="选择型号" options={dictionaryOptions.model} optionFilterProp="label" />
           </Form.Item>
           <Form.Item name="location" label="存放地点" rules={[{ required: true, message: '请选择存放地点' }]}>
-            <Select showSearch placeholder="选择存放地点" options={deviceLocationOptions} optionFilterProp="label" />
+            <Select showSearch placeholder="选择存放地点" options={dictionaryOptions.location} optionFilterProp="label" />
           </Form.Item>
           <Form.Item name="ownerId" label="默认保管责任人" rules={[{ required: true, message: '请选择默认保管责任人' }]}>
             <Select
@@ -651,7 +668,7 @@ export function DevicesPage() {
               showSearch
               placeholder="选择验收后的存放位置"
               optionFilterProp="label"
-              options={deviceLocationOptions}
+              options={dictionaryOptions.location}
             />
           </Form.Item>
           <Form.Item name="result" label="验收说明">
@@ -851,6 +868,14 @@ function buildOwnerOptions(users: User[], currentUser: User) {
       role: currentUser.role,
     },
   ];
+}
+
+function buildDictionaryOptions(groups: DeviceDictionaryGroup[]) {
+  const result = { ...defaultDictionaryOptions };
+  groups.forEach((group) => {
+    result[group.field] = group.items.map((item) => ({ label: item.value, value: item.value }));
+  });
+  return result;
 }
 
 function readFileAsText(file: File) {

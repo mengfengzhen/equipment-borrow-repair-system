@@ -6,7 +6,17 @@ import { DeviceStatus, Roles } from '../common/constants';
 import { CurrentUser, RequestUser } from '../common/current-user.decorator';
 import { RequireRoles } from '../common/roles.decorator';
 import { RolesGuard } from '../common/roles.guard';
-import { BorrowOptionsQueryDto, CreateDeviceDto, DeviceQueryDto, ImportDevicesDto, UpdateDeviceDto } from './dto';
+import {
+  BorrowOptionsQueryDto,
+  CreateDeviceDictionaryDto,
+  CreateDeviceDto,
+  DeleteDeviceDictionaryDto,
+  DeviceDictionaryFieldDto,
+  DeviceQueryDto,
+  ImportDevicesDto,
+  UpdateDeviceDictionaryDto,
+  UpdateDeviceDto,
+} from './dto';
 import { DevicesService } from './devices.service';
 
 @ApiTags('devices')
@@ -28,6 +38,42 @@ export class DevicesController {
   @RequireRoles(Roles.USER)
   borrowOptions(@Query() query: BorrowOptionsQueryDto) {
     return this.devicesService.borrowOptions(query);
+  }
+
+  @Get('dictionaries')
+  @RequireRoles(Roles.ADMIN)
+  dictionaries() {
+    return this.devicesService.dictionaries();
+  }
+
+  @Post('dictionaries/:field')
+  @RequireRoles(Roles.ADMIN)
+  createDictionaryValue(
+    @Param() params: DeviceDictionaryFieldDto,
+    @Body() dto: CreateDeviceDictionaryDto,
+    @CurrentUser() user: RequestUser,
+  ) {
+    return this.devicesService.createDictionaryValue(params.field, dto, user);
+  }
+
+  @Patch('dictionaries/:field')
+  @RequireRoles(Roles.ADMIN)
+  updateDictionaryValue(
+    @Param() params: DeviceDictionaryFieldDto,
+    @Body() dto: UpdateDeviceDictionaryDto,
+    @CurrentUser() user: RequestUser,
+  ) {
+    return this.devicesService.updateDictionaryValue(params.field, dto, user);
+  }
+
+  @Delete('dictionaries/:field')
+  @RequireRoles(Roles.ADMIN)
+  deleteDictionaryValue(
+    @Param() params: DeviceDictionaryFieldDto,
+    @Query() dto: DeleteDeviceDictionaryDto,
+    @CurrentUser() user: RequestUser,
+  ) {
+    return this.devicesService.deleteDictionaryValue(params.field, dto, user);
   }
 
   @Get(':id')
