@@ -3,12 +3,12 @@ import { Alert, Button, DatePicker, Descriptions, Drawer, Form, Input, InputNumb
 import { ColumnsType } from 'antd/es/table';
 import type { UploadFile } from 'antd/es/upload/interface';
 import dayjs from 'dayjs';
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { http } from '../api/http';
 import { StatusTag } from '../components/StatusTag';
 import { deviceBrandOptions, deviceLocationOptions, deviceModelOptions, deviceTypeOptions } from '../constants/deviceOptions';
-import { DeviceDictionaryGroup } from '../types/deviceDictionary';
+import { DeviceDictionaryGroup, DeviceDictionaryItem } from '../types/deviceDictionary';
 import { deviceStatusNames, repairStatusNames } from '../types/enums';
 import { BorrowRequest, Device, User } from '../types/models';
 import { formatDateRange, formatDateTime, money } from '../utils/format';
@@ -38,10 +38,26 @@ type BorrowOption = {
   sampleDeviceId: string;
 };
 
-const defaultDictionaryOptions = {
+type SelectOption = {
+  label: string;
+  value: string;
+};
+
+type DeviceDictionaryOptions = {
+  type: SelectOption[];
+  brand: SelectOption[];
+  model: DeviceDictionaryItem[];
+  location: SelectOption[];
+};
+
+const defaultDictionaryOptions: DeviceDictionaryOptions = {
   type: deviceTypeOptions,
   brand: deviceBrandOptions,
-  model: deviceModelOptions,
+  model: deviceModelOptions.map((item) => ({
+    value: item.value,
+    used: false,
+    usageCount: 0,
+  })),
   location: deviceLocationOptions,
 };
 
@@ -58,7 +74,7 @@ export function DevicesPage() {
   const [importing, setImporting] = useState(false);
   const [selectedBorrowOptionKey, setSelectedBorrowOptionKey] = useState<string>();
   const [repairConfirmDevice, setRepairConfirmDevice] = useState<Device>();
-  const [dictionaryOptions, setDictionaryOptions] = useState(defaultDictionaryOptions);
+  const [dictionaryOptions, setDictionaryOptions] = useState<DeviceDictionaryOptions>(defaultDictionaryOptions);
   const [detailOpen, setDetailOpen] = useState<{ device: Device; history?: DeviceHistory }>();
   const [form] = Form.useForm();
   const [filterForm] = Form.useForm();
@@ -77,6 +93,28 @@ export function DevicesPage() {
     brand: searchParams.get('brand') || undefined,
     location: searchParams.get('location') || undefined,
   };
+  const selectedDeviceType = Form.useWatch('type', form);
+  const selectedDeviceBrand = Form.useWatch('brand', form);
+  const availableBrandOptions = useMemo(() => {
+    if (!selectedDeviceType) {
+      return dictionaryOptions.brand;
+    }
+    const brands = new Set(
+      dictionaryOptions.model
+        .filter((item) => item.type === selectedDeviceType)
+        .map((item) => item.brand)
+        .filter((value): value is string => Boolean(value)),
+    );
+    return dictionaryOptions.brand.filter((item) => brands.has(item.value));
+  }, [dictionaryOptions.brand, dictionaryOptions.model, selectedDeviceType]);
+  const availableModelOptions = useMemo(() => {
+    if (!selectedDeviceType || !selectedDeviceBrand) {
+      return [];
+    }
+    return dictionaryOptions.model
+      .filter((item) => item.type === selectedDeviceType && item.brand === selectedDeviceBrand)
+      .map((item) => ({ label: item.value, value: item.value }));
+  }, [dictionaryOptions.model, selectedDeviceBrand, selectedDeviceType]);
 
   const buildQuery = () => {
     const params = new URLSearchParams();
@@ -560,13 +598,31 @@ export function DevicesPage() {
             </Form.Item>
           )}
           <Form.Item name="type" label="设备类型" rules={[{ required: true, message: '请选择设备类型' }]}>
-            <Select placeholder="选择设备类型" options={dictionaryOptions.type} />
+            <Select
+              placeholder="选择设备类型"
+              options={dictionaryOptions.type}
+              onChange={() => form.setFieldsValue({ brand: undefined, model: undefined })}
+            />
           </Form.Item>
           <Form.Item name="brand" label="品牌" rules={[{ required: true, message: '请选择品牌' }]}>
-            <Select showSearch placeholder="选择品牌" options={dictionaryOptions.brand} optionFilterProp="label" />
+            <Select
+              showSearch
+              placeholder={selectedDeviceType ? '选择品牌' : '请先选择设备类型'}
+              options={availableBrandOptions}
+              optionFilterProp="label"
+              disabled={!selectedDeviceType}
+              onChange={() => form.setFieldsValue({ model: undefined })}
+            />
           </Form.Item>
           <Form.Item name="model" label="型号" rules={[{ required: true, message: '请选择型号' }]}>
-            <Select showSearch placeholder="选择型号" options={dictionaryOptions.model} optionFilterProp="label" />
+            <Select
+              showSearch
+              placeholder={selectedDeviceBrand ? '选择型号' : '请先选择品牌'}
+              options={availableModelOptions}
+              optionFilterProp="label"
+              disabled={!selectedDeviceType || !selectedDeviceBrand}
+              notFoundContent="当前类型和品牌下没有可选型号"
+            />
           </Form.Item>
           <Form.Item name="location" label="存放地点" rules={[{ required: true, message: '请选择存放地点' }]}>
             <Select showSearch placeholder="选择存放地点" options={dictionaryOptions.location} optionFilterProp="label" />
@@ -609,7 +665,7 @@ export function DevicesPage() {
             type="info"
             showIcon
             message="CSV 格式说明"
-            description="必填列：name、type、brand、model、location。设备类型、品牌、型号、存放地点必须和系统可选项一致；quantity 不填默认为 1；ownerUsername 填默认保管责任人账号。设备编号由系统按类型自动生成。"
+            description="必填列：name、type、brand、model、location。设备类型、品牌、存放地点必须和系统可选项一致，型号必须匹配对应的设备类型和品牌；quantity 不填默认为 1；ownerUsername 填默认保管责任人账号。设备编号由系统按类型自动生成。"
           />
           <div>
             <Typography.Text strong>示例 CSV</Typography.Text>
@@ -871,8 +927,17 @@ function buildOwnerOptions(users: User[], currentUser: User) {
 }
 
 function buildDictionaryOptions(groups: DeviceDictionaryGroup[]) {
-  const result = { ...defaultDictionaryOptions };
+  const result: DeviceDictionaryOptions = {
+    type: defaultDictionaryOptions.type,
+    brand: defaultDictionaryOptions.brand,
+    model: defaultDictionaryOptions.model,
+    location: defaultDictionaryOptions.location,
+  };
   groups.forEach((group) => {
+    if (group.field === 'model') {
+      result.model = group.items;
+      return;
+    }
     result[group.field] = group.items.map((item) => ({ label: item.value, value: item.value }));
   });
   return result;

@@ -2,6 +2,8 @@ export type DeviceDictionaryField = 'type' | 'brand' | 'model' | 'location';
 
 export type DeviceDictionaryItem = {
   value: string;
+  type?: string;
+  brand?: string;
   used: boolean;
   usageCount: number;
 };

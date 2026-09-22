@@ -97,6 +97,14 @@ export class DeviceDictionaryFieldDto {
 export class CreateDeviceDictionaryDto {
   @IsString()
   value!: string;
+
+  @IsOptional()
+  @IsString()
+  type?: string;
+
+  @IsOptional()
+  @IsString()
+  brand?: string;
 }
 
 export class UpdateDeviceDictionaryDto {
@@ -105,11 +113,35 @@ export class UpdateDeviceDictionaryDto {
 
   @IsString()
   value!: string;
+
+  @IsOptional()
+  @IsString()
+  oldType?: string;
+
+  @IsOptional()
+  @IsString()
+  oldBrand?: string;
+
+  @IsOptional()
+  @IsString()
+  type?: string;
+
+  @IsOptional()
+  @IsString()
+  brand?: string;
 }
 
 export class DeleteDeviceDictionaryDto {
   @IsString()
   value!: string;
+
+  @IsOptional()
+  @IsString()
+  type?: string;
+
+  @IsOptional()
+  @IsString()
+  brand?: string;
 }
 
 export class UpdateDeviceDto {

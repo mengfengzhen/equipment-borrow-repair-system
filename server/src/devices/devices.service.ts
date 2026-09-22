@@ -175,11 +175,20 @@ export class DevicesService {
     return dictionaryFields.map((field) => ({
       field,
       label: dictionaryFieldLabels[field],
-      items: dictionary[field].map((value) => ({
-        value,
-        used: (usage[field].get(value) || 0) > 0,
-        usageCount: usage[field].get(value) || 0,
-      })),
+      items: field === 'model'
+        ? dictionary.model.map((item) => {
+            const key = buildModelDictionaryKey(item);
+            return {
+              ...item,
+              used: (usage.model.get(key) || 0) > 0,
+              usageCount: usage.model.get(key) || 0,
+            };
+          })
+        : dictionary[field].map((value) => ({
+            value,
+            used: (usage[field].get(value) || 0) > 0,
+            usageCount: usage[field].get(value) || 0,
+          })),
     }));
   }
 
@@ -190,17 +199,25 @@ export class DevicesService {
     }
 
     const dictionary = await this.getDeviceDictionaryValues();
-    if (dictionary[field].includes(value)) {
-      throw new BadRequestException('字典值已存在');
+    if (field === 'model') {
+      const item = this.normalizeModelDictionaryDto(dto, dictionary);
+      if (dictionary.model.some((model) => buildModelDictionaryKey(model) === buildModelDictionaryKey(item))) {
+        throw new BadRequestException('型号组合已存在');
+      }
+      dictionary.model.push(item);
+    } else {
+      if (dictionary[field].includes(value)) {
+        throw new BadRequestException('字典值已存在');
+      }
+      dictionary[field].push(value);
     }
 
-    dictionary[field].push(value);
     await this.saveDeviceDictionaryValues(dictionary);
     await this.auditLogs.record({
       actorId: user.id,
       action: 'CREATE_DEVICE_DICTIONARY_VALUE',
       targetType: 'DEVICE_DICTIONARY',
-      detail: { field, value },
+      detail: { field, value, type: dto.type, brand: dto.brand },
     });
     return this.dictionaries();
   }
@@ -211,49 +228,76 @@ export class DevicesService {
     if (!oldValue || !value) {
       throw new BadRequestException('请输入字典值');
     }
-    if (oldValue === value) {
+    if (field !== 'model' && oldValue === value) {
       return this.dictionaries();
     }
 
     const dictionary = await this.getDeviceDictionaryValues();
-    if (!dictionary[field].includes(oldValue)) {
-      throw new BadRequestException('原字典值不存在');
+    if (field === 'model') {
+      const oldItem = this.normalizeModelDictionaryDto({ value: oldValue, type: dto.oldType, brand: dto.oldBrand }, dictionary);
+      const nextItem = this.normalizeModelDictionaryDto(dto, dictionary);
+      const oldKey = buildModelDictionaryKey(oldItem);
+      const nextKey = buildModelDictionaryKey(nextItem);
+      if (!dictionary.model.some((model) => buildModelDictionaryKey(model) === oldKey)) {
+        throw new BadRequestException('原型号组合不存在');
+      }
+      if (oldKey !== nextKey && dictionary.model.some((model) => buildModelDictionaryKey(model) === nextKey)) {
+        throw new BadRequestException('新型号组合已存在');
+      }
+      await this.assertDictionaryValueUnused(field, oldKey, '当前型号组合已被使用，不能编辑');
+      dictionary.model = dictionary.model.map((item) => (buildModelDictionaryKey(item) === oldKey ? nextItem : item));
+    } else {
+      if (!dictionary[field].includes(oldValue)) {
+        throw new BadRequestException('原字典值不存在');
+      }
+      if (dictionary[field].includes(value)) {
+        throw new BadRequestException('新字典值已存在');
+      }
+      await this.assertDictionaryValueUnused(field, oldValue, '当前字典值已被使用，不能编辑');
+      this.assertDictionaryValueNotReferenced(dictionary, field, oldValue, '当前字典值已被型号组合引用，不能编辑');
+      dictionary[field] = dictionary[field].map((item) => (item === oldValue ? value : item));
     }
-    if (dictionary[field].includes(value)) {
-      throw new BadRequestException('新字典值已存在');
-    }
-    await this.assertDictionaryValueUnused(field, oldValue, '当前字典值已被使用，不能编辑');
 
-    dictionary[field] = dictionary[field].map((item) => (item === oldValue ? value : item));
     await this.saveDeviceDictionaryValues(dictionary);
     await this.auditLogs.record({
       actorId: user.id,
       action: 'UPDATE_DEVICE_DICTIONARY_VALUE',
       targetType: 'DEVICE_DICTIONARY',
-      detail: { field, from: oldValue, to: value },
+      detail: { field, from: oldValue, to: value, oldType: dto.oldType, oldBrand: dto.oldBrand, type: dto.type, brand: dto.brand },
     });
     return this.dictionaries();
   }
 
-  async deleteDictionaryValue(field: DeviceDictionaryField, dto: { value: string }, user: RequestUser) {
+  async deleteDictionaryValue(field: DeviceDictionaryField, dto: { value: string; type?: string; brand?: string }, user: RequestUser) {
     const value = normalizeDictionaryValue(dto.value);
     if (!value) {
       throw new BadRequestException('请选择要删除的字典值');
     }
 
     const dictionary = await this.getDeviceDictionaryValues();
-    if (!dictionary[field].includes(value)) {
-      throw new BadRequestException('字典值不存在');
+    if (field === 'model') {
+      const item = this.normalizeModelDictionaryDto(dto, dictionary);
+      const key = buildModelDictionaryKey(item);
+      if (!dictionary.model.some((model) => buildModelDictionaryKey(model) === key)) {
+        throw new BadRequestException('型号组合不存在');
+      }
+      await this.assertDictionaryValueUnused(field, key, '当前型号组合已被使用，不能删除');
+      dictionary.model = dictionary.model.filter((model) => buildModelDictionaryKey(model) !== key);
+    } else {
+      if (!dictionary[field].includes(value)) {
+        throw new BadRequestException('字典值不存在');
+      }
+      await this.assertDictionaryValueUnused(field, value, '当前字典值已被使用，不能删除');
+      this.assertDictionaryValueNotReferenced(dictionary, field, value, '当前字典值已被型号组合引用，不能删除');
+      dictionary[field] = dictionary[field].filter((item) => item !== value);
     }
-    await this.assertDictionaryValueUnused(field, value, '当前字典值已被使用，不能删除');
 
-    dictionary[field] = dictionary[field].filter((item) => item !== value);
     await this.saveDeviceDictionaryValues(dictionary);
     await this.auditLogs.record({
       actorId: user.id,
       action: 'DELETE_DEVICE_DICTIONARY_VALUE',
       targetType: 'DEVICE_DICTIONARY',
-      detail: { field, value },
+      detail: { field, value, type: dto.type, brand: dto.brand },
     });
     return this.dictionaries();
   }
@@ -391,9 +435,14 @@ export class DevicesService {
   }
 
   async update(id: string, dto: UpdateDeviceDto, user: RequestUser) {
-    await this.get(id);
+    const current = await this.get(id);
     const dictionary = await this.getDeviceDictionaryValues();
-    validateDeviceDictionaryValues(dto, dictionary, true);
+    validateDeviceDictionaryValues({
+      type: dto.type ?? current.type,
+      brand: dto.brand ?? current.brand ?? undefined,
+      model: dto.model ?? current.model ?? undefined,
+      location: dto.location ?? current.location,
+    }, dictionary);
     const device = await this.prisma.device.update({
       where: { id },
       data: {
@@ -530,16 +579,23 @@ export class DevicesService {
     const setting = await this.prisma.systemSetting.findUnique({ where: { key: deviceDictionarySettingKey } });
     if (!setting) {
       const dictionary = cloneDefaultDeviceDictionary();
-      await this.saveDeviceDictionaryValues(dictionary);
-      return dictionary;
+      const enriched = await this.enrichDictionaryWithExistingDevices(dictionary);
+      await this.saveDeviceDictionaryValues(enriched);
+      return enriched;
     }
 
     try {
-      return sanitizeDeviceDictionary(JSON.parse(setting.value));
+      const dictionary = sanitizeDeviceDictionary(JSON.parse(setting.value));
+      const enriched = await this.enrichDictionaryWithExistingDevices(dictionary);
+      if (JSON.stringify(enriched) !== JSON.stringify(dictionary)) {
+        await this.saveDeviceDictionaryValues(enriched);
+      }
+      return enriched;
     } catch {
       const dictionary = cloneDefaultDeviceDictionary();
-      await this.saveDeviceDictionaryValues(dictionary);
-      return dictionary;
+      const enriched = await this.enrichDictionaryWithExistingDevices(dictionary);
+      await this.saveDeviceDictionaryValues(enriched);
+      return enriched;
     }
   }
 
@@ -559,6 +615,7 @@ export class DevicesService {
 
   private async getDictionaryUsage(): Promise<Record<DeviceDictionaryField, Map<string, number>>> {
     const usage = createEmptyDictionaryUsage();
+    const dictionary = await this.getDeviceDictionaryValues();
     const devices = await this.prisma.device.findMany({
       where: { deletedAt: null },
       select: { type: true, brand: true, model: true, location: true },
@@ -567,8 +624,13 @@ export class DevicesService {
     devices.forEach((device) => {
       addUsage(usage.type, device.type);
       addUsage(usage.brand, device.brand);
-      addUsage(usage.model, device.model);
+      addUsage(usage.model, buildModelDictionaryKey({ type: device.type, brand: device.brand || '', value: device.model || '' }));
       addUsage(usage.location, device.location);
+    });
+
+    dictionary.model.forEach((item) => {
+      addUsage(usage.type, item.type);
+      addUsage(usage.brand, item.brand);
     });
 
     return usage;
@@ -577,6 +639,65 @@ export class DevicesService {
   private async assertDictionaryValueUnused(field: DeviceDictionaryField, value: string, message: string) {
     const usage = await this.getDictionaryUsage();
     if ((usage[field].get(value) || 0) > 0) {
+      throw new BadRequestException(message);
+    }
+  }
+
+  private async enrichDictionaryWithExistingDevices(dictionary: DeviceDictionaryValues) {
+    const next = sanitizeDeviceDictionary(dictionary);
+    const devices = await this.prisma.device.findMany({
+      where: { deletedAt: null },
+      select: { type: true, brand: true, model: true, location: true },
+    });
+    devices.forEach((device) => {
+      pushUnique(next.type, device.type);
+      pushUnique(next.brand, device.brand);
+      pushUnique(next.location, device.location);
+      const model = normalizeDictionaryValue(device.model);
+      const brand = normalizeDictionaryValue(device.brand);
+      const type = normalizeDictionaryValue(device.type);
+      if (type && brand && model) {
+        pushUniqueModel(next.model, { type, brand, value: model });
+      }
+    });
+    return next;
+  }
+
+  private normalizeModelDictionaryDto(
+    dto: { value?: string; type?: string; brand?: string },
+    dictionary: DeviceDictionaryValues,
+  ): DeviceModelDictionaryItem {
+    const type = normalizeDictionaryValue(dto.type);
+    const brand = normalizeDictionaryValue(dto.brand);
+    const value = normalizeDictionaryValue(dto.value);
+    if (!type) {
+      throw new BadRequestException('请选择设备类型');
+    }
+    if (!brand) {
+      throw new BadRequestException('请选择品牌');
+    }
+    if (!value) {
+      throw new BadRequestException('请输入型号');
+    }
+    if (!dictionary.type.includes(type)) {
+      throw new BadRequestException(`设备类型不在字典范围内：${type}`);
+    }
+    if (!dictionary.brand.includes(brand)) {
+      throw new BadRequestException(`品牌不在字典范围内：${brand}`);
+    }
+    return { type, brand, value };
+  }
+
+  private assertDictionaryValueNotReferenced(
+    dictionary: DeviceDictionaryValues,
+    field: DeviceDictionaryField,
+    value: string,
+    message: string,
+  ) {
+    if (field === 'type' && dictionary.model.some((item) => item.type === value)) {
+      throw new BadRequestException(message);
+    }
+    if (field === 'brand' && dictionary.model.some((item) => item.brand === value)) {
       throw new BadRequestException(message);
     }
   }
@@ -604,7 +725,18 @@ type NormalizedImportRow = {
 
 type DeviceDictionaryField = 'type' | 'brand' | 'model' | 'location';
 
-type DeviceDictionaryValues = Record<DeviceDictionaryField, string[]>;
+type DeviceModelDictionaryItem = {
+  type: string;
+  brand: string;
+  value: string;
+};
+
+type DeviceDictionaryValues = {
+  type: string[];
+  brand: string[];
+  model: DeviceModelDictionaryItem[];
+  location: string[];
+};
 
 function parseDeviceCsv(csvText: string) {
   const table = parseCsv(csvText.replace(/^\uFEFF/, ''));
@@ -652,8 +784,8 @@ function normalizeImportRow(
   if (brand && !dictionary.brand.includes(brand)) {
     errors.push(`${line} 品牌不在可选范围内：${brand}`);
   }
-  if (model && !dictionary.model.includes(model)) {
-    errors.push(`${line} 型号不在可选范围内：${model}`);
+  if (type && brand && model && !hasModelDictionaryItem(dictionary, { type, brand, value: model })) {
+    errors.push(`${line} 型号组合不在可选范围内：${type} / ${brand} / ${model}`);
   }
   if (location && !dictionary.location.includes(location)) {
     errors.push(`${line} 存放地点不在可选范围内：${location}`);
@@ -786,14 +918,28 @@ const dictionaryFields: DeviceDictionaryField[] = ['type', 'brand', 'model', 'lo
 const dictionaryFieldLabels: Record<DeviceDictionaryField, string> = {
   type: '设备类型',
   brand: '品牌',
-  model: '型号',
+  model: '型号组合',
   location: '存放地点',
 };
 
 const defaultDeviceDictionary: DeviceDictionaryValues = {
   type: ['摄影器材', '电脑设备', '测试设备', '音频设备', '会议设备', '办公设备', '网络设备', '存储设备', '移动设备'],
   brand: ['Sony', 'Apple', 'Fluke', 'Jabra', 'Epson', 'Lenovo', 'DJI', 'Brother', 'H3C', 'SanDisk', 'Xiaomi', 'Honeywell'],
-  model: ['A7M4', 'M3 Pro', 'LinkIQ', 'Speak2 75', 'CB-FH52', 'ThinkVision M14', 'RS 4', 'ICD-UX570F', 'PT-P900', 'Magic BE18000', 'Extreme Pro', '14 Pro', '1950GHD'],
+  model: [
+    { type: '摄影器材', brand: 'Sony', value: 'A7M4' },
+    { type: '电脑设备', brand: 'Apple', value: 'M3 Pro' },
+    { type: '测试设备', brand: 'Fluke', value: 'LinkIQ' },
+    { type: '音频设备', brand: 'Jabra', value: 'Speak2 75' },
+    { type: '会议设备', brand: 'Epson', value: 'CB-FH52' },
+    { type: '会议设备', brand: 'Lenovo', value: 'ThinkVision M14' },
+    { type: '摄影器材', brand: 'DJI', value: 'RS 4' },
+    { type: '音频设备', brand: 'Sony', value: 'ICD-UX570F' },
+    { type: '办公设备', brand: 'Brother', value: 'PT-P900' },
+    { type: '网络设备', brand: 'H3C', value: 'Magic BE18000' },
+    { type: '存储设备', brand: 'SanDisk', value: 'Extreme Pro' },
+    { type: '移动设备', brand: 'Xiaomi', value: '14 Pro' },
+    { type: '办公设备', brand: 'Honeywell', value: '1950GHD' },
+  ],
   location: ['行政库房 A1', '行政库房 A2', '行政库房 A3', '行政库房 B1', '行政库房 B2', '行政库房 B3', '行政库房 B4', '行政库房 D1', '行政库房 D2', '实验室 C1', '实验室 C3', '产品部'],
 };
 
@@ -815,43 +961,85 @@ function cloneDefaultDeviceDictionary(): DeviceDictionaryValues {
 
 function sanitizeDeviceDictionary(input: unknown): DeviceDictionaryValues {
   const source = typeof input === 'object' && input ? input as Partial<DeviceDictionaryValues> : {};
-  return dictionaryFields.reduce((acc, field) => {
-    const values = Array.isArray(source[field]) ? source[field] : defaultDeviceDictionary[field];
-    acc[field] = Array.from(new Set(values.map((item) => normalizeDictionaryValue(item)).filter(Boolean)));
-    return acc;
-  }, {} as DeviceDictionaryValues);
+  return {
+    type: sanitizeStringDictionary(source.type, defaultDeviceDictionary.type),
+    brand: sanitizeStringDictionary(source.brand, defaultDeviceDictionary.brand),
+    location: sanitizeStringDictionary(source.location, defaultDeviceDictionary.location),
+    model: sanitizeModelDictionary(source.model, source.type, source.brand),
+  };
 }
 
 function normalizeDictionaryValue(value: unknown) {
   return String(value || '').trim();
 }
 
+function sanitizeStringDictionary(values: unknown, defaults: string[]) {
+  const source = Array.isArray(values) ? values : defaults;
+  return Array.from(new Set(source.map((item) => normalizeDictionaryValue(item)).filter(Boolean)));
+}
+
+function sanitizeModelDictionary(values: unknown, rawTypes: unknown, rawBrands: unknown) {
+  const models = Array.isArray(values) ? values : defaultDeviceDictionary.model;
+  const types = sanitizeStringDictionary(rawTypes, defaultDeviceDictionary.type);
+  const brands = sanitizeStringDictionary(rawBrands, defaultDeviceDictionary.brand);
+  const fallbackType = types[0] || defaultDeviceDictionary.type[0];
+  const fallbackBrand = brands[0] || defaultDeviceDictionary.brand[0];
+  const mapped = models.map((item) => {
+    if (typeof item === 'object' && item) {
+      const model = item as Partial<DeviceModelDictionaryItem>;
+      return {
+        type: normalizeDictionaryValue(model.type) || fallbackType,
+        brand: normalizeDictionaryValue(model.brand) || fallbackBrand,
+        value: normalizeDictionaryValue(model.value),
+      };
+    }
+
+    const value = normalizeDictionaryValue(item);
+    const defaultModel = defaultDeviceDictionary.model.find((model) => model.value === value);
+    return {
+      type: defaultModel?.type || fallbackType,
+      brand: defaultModel?.brand || fallbackBrand,
+      value,
+    };
+  }).filter((item) => item.type && item.brand && item.value);
+
+  return Array.from(
+    new Map(mapped.map((item) => [buildModelDictionaryKey(item), item])).values(),
+  );
+}
+
 function validateDeviceDictionaryValues(
   dto: Partial<Pick<CreateDeviceDto, 'type' | 'brand' | 'model' | 'location'>>,
   dictionary: DeviceDictionaryValues,
-  partial = false,
 ) {
-  if (!partial || dto.type !== undefined) {
-    validateDictionaryValue('type', dto.type, dictionary);
-  }
-  if (!partial || dto.brand !== undefined) {
-    validateDictionaryValue('brand', dto.brand, dictionary);
-  }
-  if (!partial || dto.model !== undefined) {
-    validateDictionaryValue('model', dto.model, dictionary);
-  }
-  if (!partial || dto.location !== undefined) {
-    validateDictionaryValue('location', dto.location, dictionary);
-  }
+  validateDictionaryValue('type', dto.type, dictionary);
+  validateDictionaryValue('brand', dto.brand, dictionary);
+  validateDictionaryValue('location', dto.location, dictionary);
+  validateModelDictionaryValue(dto, dictionary);
 }
 
-function validateDictionaryValue(field: DeviceDictionaryField, value: string | undefined, dictionary: DeviceDictionaryValues) {
+function validateDictionaryValue(field: Exclude<DeviceDictionaryField, 'model'>, value: string | undefined, dictionary: DeviceDictionaryValues) {
   const normalized = normalizeDictionaryValue(value);
   if (!normalized) {
     throw new BadRequestException(`请选择${dictionaryFieldLabels[field]}`);
   }
   if (!dictionary[field].includes(normalized)) {
     throw new BadRequestException(`${dictionaryFieldLabels[field]}不在字典范围内：${normalized}`);
+  }
+}
+
+function validateModelDictionaryValue(
+  dto: Partial<Pick<CreateDeviceDto, 'type' | 'brand' | 'model'>>,
+  dictionary: DeviceDictionaryValues,
+) {
+  const type = normalizeDictionaryValue(dto.type);
+  const brand = normalizeDictionaryValue(dto.brand);
+  const value = normalizeDictionaryValue(dto.model);
+  if (!value) {
+    throw new BadRequestException('请选择型号');
+  }
+  if (!hasModelDictionaryItem(dictionary, { type, brand, value })) {
+    throw new BadRequestException(`型号组合不在字典范围内：${type} / ${brand} / ${value}`);
   }
 }
 
@@ -866,6 +1054,32 @@ function addUsage(usage: Map<string, number>, value?: string | null) {
   const normalized = normalizeDictionaryValue(value);
   if (!normalized) return;
   usage.set(normalized, (usage.get(normalized) || 0) + 1);
+}
+
+function buildModelDictionaryKey(item: { type?: string | null; brand?: string | null; value?: string | null }) {
+  return [
+    normalizeDictionaryValue(item.type),
+    normalizeDictionaryValue(item.brand),
+    normalizeDictionaryValue(item.value),
+  ].join('::');
+}
+
+function hasModelDictionaryItem(dictionary: DeviceDictionaryValues, item: DeviceModelDictionaryItem) {
+  const key = buildModelDictionaryKey(item);
+  return dictionary.model.some((model) => buildModelDictionaryKey(model) === key);
+}
+
+function pushUnique(values: string[], value?: string | null) {
+  const normalized = normalizeDictionaryValue(value);
+  if (normalized && !values.includes(normalized)) {
+    values.push(normalized);
+  }
+}
+
+function pushUniqueModel(values: DeviceModelDictionaryItem[], item: DeviceModelDictionaryItem) {
+  if (!values.some((model) => buildModelDictionaryKey(model) === buildModelDictionaryKey(item))) {
+    values.push(item);
+  }
 }
 
 export function buildDeviceGroupKey(device: { type: string; brand?: string | null; model?: string | null }) {
